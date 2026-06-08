@@ -20,6 +20,8 @@ Conexões de sinais:
   ReaderPane.scrape_requested → ScraperWorker.request_scrape (P1, texto completo)
   ScraperWorker.scrape_done  → ReaderPane.on_scrape_done + statusbar
   TranslationWorker.title_translated → ArticleList.on_title_translated (P3, tradução de títulos)
+  ReaderPane.translate_requested → TranslationWorker.request_article_translation (P2)
+  TranslationWorker.article_translated → ReaderPane.on_article_translated
 """
 from __future__ import annotations
 
@@ -129,6 +131,8 @@ class MainWindow(QMainWindow):
             self.config.translation_backend,
         )
         self._translator.title_translated.connect(self._article_list.on_title_translated)
+        self._translator.article_translated.connect(self._reader.on_article_translated)
+        self._reader.translate_requested.connect(self._translator.request_article_translation)
         self._translator.start()
         log.info("TranslationWorker iniciado.")
 

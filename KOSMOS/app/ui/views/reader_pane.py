@@ -4,7 +4,12 @@ reader_pane.py — Painel direito: exibe o conteúdo do artigo selecionado.
 Exibe metadados do cabeçalho + corpo. Se o artigo já tem texto completo
 (`content_text`, scraping concluído), mostra-o; senão mostra o excerpt do feed
 e um botão "Carregar texto completo" que dispara o scraping P1 via ScraperWorker
-(sinal `scrape_requested`). Resultados de análise AI chegam na Fase 4.
+(sinal `scrape_requested`).
+
+Tradução sob demanda (Fase 6): botão "Traduzir" dispara `translate_requested` (P2);
+quando a tradução chega (`on_article_translated`), o corpo passa a exibi-la, com o
+botão alternando entre "Ver original" e "Ver tradução" (o original fica sempre
+acessível). Resultados de análise AI chegam na Fase 4.
 
 Quando um artigo é aberto, marca-o como lido no banco (is_read=1, read_at=now).
 Isso permite que a sidebar atualize os contadores de não-lidos corretamente.
@@ -55,11 +60,15 @@ class ReaderPane(QWidget):
 
     article_read = Signal(int)  # article_id — emitido após marcar como lido
     scrape_requested = Signal(int, str)  # (article_id, url) — pedido P1 de texto completo
+    translate_requested = Signal(int)    # article_id — pedido P2 de tradução do corpo
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self._current_article_id: int | None = None
         self._current_url: str = ""
+        self._orig_body: str = ""              # corpo no idioma original (content_text/excerpt)
+        self._translated_body: str = ""        # corpo traduzido (content_text_translated)
+        self._showing_translation: bool = False
         self._setup_ui()
         log.debug("ReaderPane inicializada.")
 
@@ -133,6 +142,14 @@ class ReaderPane(QWidget):
         self._fulltext_status.setWordWrap(True)
         self._layout.addWidget(self._fulltext_status)
 
+        # Botão de tradução sob demanda (P2): "Traduzir" / "Ver tradução" / "Ver original"
+        self._translate_btn = QPushButton("Traduzir")
+        self._translate_btn.setObjectName("reader_translate_btn")
+        self._translate_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._translate_btn.clicked.connect(self._on_translate_clicked)
+        self._layout.addSpacing(8)
+        self._layout.addWidget(self._translate_btn, alignment=Qt.AlignmentFlag.AlignLeft)
+
         self._layout.addStretch()
         self._set_content_visible(False)
 
@@ -163,7 +180,7 @@ class ReaderPane(QWidget):
                 SELECT a.id, a.title, a.author, a.published_at,
                        a.article_type, a.estimated_reading_min,
                        a.language_detected, a.content_excerpt, a.is_read,
-                       a.url, a.content_text, a.is_scraped,
+                       a.url, a.content_text, a.content_text_translated, a.is_scraped,
                        COALESCE(f.title, f.url) AS feed_title,
                        f.site_url
                   FROM articles a
@@ -203,6 +220,9 @@ class ReaderPane(QWidget):
     def clear(self) -> None:
         """Volta ao estado de placeholder (nenhum artigo selecionado)."""
         self._current_article_id = None
+        self._orig_body = ""
+        self._translated_body = ""
+        self._showing_translation = False
         self._set_content_visible(False)
         self._placeholder.show()
 
@@ -232,11 +252,18 @@ class ReaderPane(QWidget):
             meta_parts.append(f"{reading} min de leitura")
         self._meta_lbl.setText("  ·  ".join(meta_parts))
 
+        content_text = (data.get("content_text") or "").strip()
+        excerpt = (data.get("content_excerpt") or "").strip()
+        self._orig_body = content_text or excerpt
+        self._translated_body = (data.get("content_text_translated") or "").strip()
+        self._showing_translation = False
+
         self._render_body(
-            content_text=(data.get("content_text") or "").strip(),
-            excerpt=(data.get("content_excerpt") or "").strip(),
+            content_text=content_text,
+            excerpt=excerpt,
             is_scraped=int(data.get("is_scraped") or 0),
         )
+        self._refresh_translation_ui()
 
         log.debug("Artigo renderizado: id=%d título='%s'", data["id"], data.get("title", ""))
 
@@ -313,11 +340,66 @@ class ReaderPane(QWidget):
             if should_close:
                 _conn.close()
         if row is not None:
+            content_text = (row["content_text"] or "").strip()
+            excerpt = (row["content_excerpt"] or "").strip()
+            self._orig_body = content_text or excerpt
+            self._showing_translation = False
             self._render_body(
-                content_text=(row["content_text"] or "").strip(),
-                excerpt=(row["content_excerpt"] or "").strip(),
+                content_text=content_text,
+                excerpt=excerpt,
                 is_scraped=int(row["is_scraped"] or 0),
             )
+            self._refresh_translation_ui()
+
+    # ------------------------------------------------------------------
+    # Tradução sob demanda (P2)
+    # ------------------------------------------------------------------
+
+    def _refresh_translation_ui(self) -> None:
+        """Configura o botão de tradução e o corpo conforme o estado de tradução."""
+        if self._translated_body:
+            # Tradução disponível → botão alterna original/tradução
+            if self._showing_translation:
+                self._body_lbl.setText(self._translated_body)
+                self._translate_btn.setText("Ver original")
+            else:
+                self._body_lbl.setText(self._orig_body)
+                self._translate_btn.setText("Ver tradução")
+            self._body_lbl.setVisible(bool(self._body_lbl.text()))
+            self._translate_btn.setEnabled(True)
+            self._translate_btn.show()
+        elif self._orig_body:
+            # Sem tradução ainda → oferece "Traduzir"
+            self._translate_btn.setText("Traduzir")
+            self._translate_btn.setEnabled(True)
+            self._translate_btn.show()
+        else:
+            self._translate_btn.hide()
+
+    def _on_translate_clicked(self) -> None:
+        """Botão de tradução: alterna se já traduzido; senão pede tradução P2."""
+        if self._current_article_id is None:
+            return
+        if self._translated_body:
+            self._showing_translation = not self._showing_translation
+            self._refresh_translation_ui()
+        else:
+            self._translate_btn.setEnabled(False)
+            self._translate_btn.setText("Traduzindo…")
+            log.info("Solicitando tradução (P2) do artigo %d.", self._current_article_id)
+            self.translate_requested.emit(self._current_article_id)
+
+    def on_article_translated(self, article_id: int, translated: str) -> None:
+        """Slot: TranslationWorker concluiu a tradução do corpo. Exibe se for o atual."""
+        if article_id != self._current_article_id:
+            return
+        if translated and translated.strip():
+            self._translated_body = translated.strip()
+            self._showing_translation = True  # mostra a tradução assim que chega
+            self._refresh_translation_ui()
+        else:
+            self._translate_btn.setText("Traduzir")
+            self._translate_btn.setEnabled(True)
 
     def _mark_as_read(
         self,
@@ -352,5 +434,6 @@ class ReaderPane(QWidget):
             self._body_lbl,
             self._fulltext_btn,
             self._fulltext_status,
+            self._translate_btn,
         ):
             widget.setVisible(visible)

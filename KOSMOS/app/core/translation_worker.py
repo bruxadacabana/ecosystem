@@ -14,6 +14,7 @@ sem laço quente.
 from __future__ import annotations
 
 import logging
+import queue
 import sqlite3
 
 from PySide6.QtCore import QThread, Signal
@@ -88,16 +89,72 @@ def save_title_translation(
             _conn.close()
 
 
+def get_article_for_translation(
+    article_id: int,
+    conn: sqlite3.Connection | None = None,
+) -> tuple[str, str] | None:
+    """Retorna (corpo, idioma_detectado) de um artigo para tradução sob demanda.
+
+    Corpo = content_text (texto completo) com fallback para content_excerpt.
+    Retorna None se o artigo não existir ou não tiver corpo.
+    """
+    _conn = conn if conn is not None else get_conn()
+    should_close = conn is None
+    try:
+        row = _conn.execute(
+            "SELECT content_text, content_excerpt, language_detected "
+            "FROM articles WHERE id = ?",
+            (article_id,),
+        ).fetchone()
+    except sqlite3.Error as exc:
+        log.error("translation_worker: falha ao ler artigo %d para tradução: %s", article_id, exc)
+        return None
+    finally:
+        if should_close:
+            _conn.close()
+    if row is None:
+        return None
+    body = (row["content_text"] or row["content_excerpt"] or "").strip()
+    if not body:
+        return None
+    return body, (row["language_detected"] or "")
+
+
+def save_body_translation(
+    article_id: int,
+    translated: str,
+    conn: sqlite3.Connection | None = None,
+) -> bool:
+    """Persiste a tradução do corpo em content_text_translated. True em sucesso."""
+    _conn = conn if conn is not None else get_conn()
+    should_close = conn is None
+    try:
+        _conn.execute(
+            "UPDATE articles SET content_text_translated = ? WHERE id = ?",
+            (translated, article_id),
+        )
+        _conn.commit()
+        return True
+    except sqlite3.Error as exc:
+        log.error("translation_worker: falha ao salvar corpo traduzido (id=%d): %s", article_id, exc)
+        return False
+    finally:
+        if should_close:
+            _conn.close()
+
+
 class TranslationWorker(QThread):
     """QThread P3: traduz títulos de artigos em background, newest-first.
 
     Sinais:
-        title_translated(int, str) — (article_id, título traduzido) ao traduzir um
-        cycle_done(int)            — nº de títulos traduzidos no ciclo
+        title_translated(int, str)   — (article_id, título traduzido) ao traduzir um
+        article_translated(int, str) — (article_id, corpo traduzido) sob demanda (P2)
+        cycle_done(int)              — nº de títulos traduzidos no ciclo
     """
 
-    title_translated = Signal(int, str)
-    cycle_done       = Signal(int)
+    title_translated   = Signal(int, str)
+    article_translated = Signal(int, str)
+    cycle_done         = Signal(int)
 
     def __init__(self, target_lang: str, backend: str = "argos", parent=None):
         super().__init__(parent)
@@ -106,6 +163,13 @@ class TranslationWorker(QThread):
         self._stop_flag: bool = False
         self._batch_size: int = _BATCH_SIZE
         self._idle_interval_sec: int = _IDLE_INTERVAL_SEC
+        # Fila prioritária P2: tradução de corpo de artigo sob demanda (usuária pediu).
+        self._priority_q: "queue.Queue[int]" = queue.Queue()
+
+    def request_article_translation(self, article_id: int) -> None:
+        """Enfileira tradução P2 do corpo de um artigo (botão 'Traduzir' no leitor)."""
+        self._priority_q.put(article_id)
+        log.info("Tradução de artigo P2 solicitada: id=%d.", article_id)
 
     def stop(self) -> None:
         """Solicita parada. Encerra após o item atual ou o próximo tick ocioso."""
@@ -124,22 +188,63 @@ class TranslationWorker(QThread):
         while not self._stop_flag:
             n = self._run_cycle()
             self.cycle_done.emit(n)
-            # Pausa interruptível entre ciclos (não há laço quente em caso de falhas).
+            # Pausa interruptível entre ciclos; acorda em stop ou novo pedido P2.
             for _ in range(self._idle_interval_sec):
-                if self._stop_flag:
+                if self._stop_flag or not self._priority_q.empty():
                     break
                 self.msleep(1000)
         log.info("TranslationWorker encerrado.")
 
+    def _drain_priority(self) -> list[int]:
+        """Esvazia a fila de pedidos P2 (tradução de corpo) sem bloquear."""
+        items: list[int] = []
+        while True:
+            try:
+                items.append(self._priority_q.get_nowait())
+            except queue.Empty:
+                break
+        return items
+
+    def _translate_article_body(self, article_id: int) -> bool:
+        """Traduz o corpo de um artigo (P2) e salva content_text_translated."""
+        info = get_article_for_translation(article_id)
+        if info is None:
+            return False
+        body, src = info
+        result = translate(
+            body, self._target_lang, source_lang=src or None,
+            backend=self._backend, priority=2,
+        )
+        if result and result.strip() and result.strip() != body.strip():
+            if save_body_translation(article_id, result):
+                self.article_translated.emit(article_id, result)
+                return True
+        return False
+
     def _run_cycle(self) -> int:
-        """Traduz um lote de títulos pendentes. Retorna o nº traduzido."""
-        batch = get_untranslated_titles(self._target_lang, self._batch_size)
-        if not batch:
-            return 0
+        """P2 (corpo sob demanda) primeiro, depois o lote P3 de títulos.
+
+        Retorna o nº de itens traduzidos (corpos + títulos).
+        """
         count = 0
-        for article_id, title, src in batch:
+
+        # 1. P2 — pedidos de tradução de corpo têm prioridade
+        for article_id in self._drain_priority():
+            if self._stop_flag:
+                return count
+            if self._translate_article_body(article_id):
+                count += 1
+
+        # 2. P3 — lote de títulos pendentes (newest-first)
+        for article_id, title, src in get_untranslated_titles(self._target_lang, self._batch_size):
             if self._stop_flag:
                 break
+            # Preempção: atende pedidos P2 que chegaram durante o lote
+            for p_id in self._drain_priority():
+                if self._stop_flag:
+                    return count
+                if self._translate_article_body(p_id):
+                    count += 1
             result = translate(
                 title, self._target_lang, source_lang=src,
                 backend=self._backend, priority=3,

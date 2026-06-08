@@ -336,6 +336,8 @@ def archive_article(
         archive_path:    raiz de arquivamento do KOSMOS (config.archive_path).
         conn:            conexão existente (testes); None → cria e fecha própria.
         translated_text: texto traduzido (Fase 6); se presente, gera dual-language.
+                         Se None, usa `content_text_translated` do artigo (se houver) —
+                         arquiva dual-language automaticamente quando o artigo foi traduzido.
         translated_lang: idioma do texto traduzido (ex.: "pt").
 
     Returns:
@@ -352,6 +354,7 @@ def archive_article(
             """
             SELECT a.id, a.url, a.title, a.author, a.published_at, a.article_type,
                    a.language_detected, a.content_excerpt, a.content_text,
+                   a.content_text_translated,
                    a.ai_tags, a.ai_sentiment, a.ai_language, a.ai_five_ws,
                    a.ai_entities, a.ai_bias,
                    COALESCE(f.title, f.url) AS feed_title
@@ -367,6 +370,11 @@ def archive_article(
 
         row = dict(row_obj)
         source = (row.get("feed_title") or "").strip() or "Fonte desconhecida"
+
+        # Dual-language automático: se o artigo já foi traduzido (content_text_translated)
+        # e o caller não passou translated_text, usa a tradução salva.
+        if not translated_text and (row.get("content_text_translated") or "").strip():
+            translated_text = row["content_text_translated"].strip()
 
         markdown = _render_markdown(row, source, translated_text, translated_lang)
 

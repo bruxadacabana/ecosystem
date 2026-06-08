@@ -196,6 +196,79 @@ class TestRunCycle:
 
 
 # ---------------------------------------------------------------------------
+# Tradução de corpo sob demanda (P2)
+# ---------------------------------------------------------------------------
+
+def _insert_article_body(conn, feed_id, content_text="Body text.", language_detected="en"):
+    cur = conn.execute(
+        """
+        INSERT INTO articles (feed_id, url, title, content_text, language_detected)
+        VALUES (?, ?, ?, ?, ?)
+        """,
+        (feed_id, "https://j.com/body", "T", content_text, language_detected),
+    )
+    conn.commit()
+    return cur.lastrowid
+
+
+class TestArticleBodyTranslation:
+    def test_get_article_for_translation(self, db):
+        conn, fid = db
+        from app.core.translation_worker import get_article_for_translation
+        aid = _insert_article_body(conn, fid, content_text="Hello body", language_detected="en")
+        assert get_article_for_translation(aid, conn=conn) == ("Hello body", "en")
+
+    def test_get_article_falls_back_to_excerpt(self, db):
+        conn, fid = db
+        from app.core.translation_worker import get_article_for_translation
+        cur = conn.execute(
+            "INSERT INTO articles (feed_id, url, title, content_excerpt, language_detected) "
+            "VALUES (?, ?, ?, ?, ?)",
+            (fid, "https://j.com/e", "T", "Só o resumo", "en"),
+        )
+        conn.commit()
+        body, lang = get_article_for_translation(cur.lastrowid, conn=conn)
+        assert body == "Só o resumo"
+
+    def test_get_article_none_when_no_body(self, db):
+        conn, fid = db
+        from app.core.translation_worker import get_article_for_translation
+        cur = conn.execute(
+            "INSERT INTO articles (feed_id, url, title, language_detected) VALUES (?, ?, ?, ?)",
+            (fid, "https://j.com/empty", "T", "en"),
+        )
+        conn.commit()
+        assert get_article_for_translation(cur.lastrowid, conn=conn) is None
+
+    def test_save_body_translation(self, db):
+        conn, fid = db
+        from app.core.translation_worker import save_body_translation
+        aid = _insert_article_body(conn, fid)
+        assert save_body_translation(aid, "Corpo traduzido", conn=conn) is True
+        row = conn.execute("SELECT content_text_translated FROM articles WHERE id = ?", (aid,)).fetchone()
+        assert row[0] == "Corpo traduzido"
+
+    def test_request_enqueues(self, worker):
+        worker.request_article_translation(42)
+        assert worker._priority_q.get_nowait() == 42
+
+    def test_run_cycle_translates_body_first(self, db, worker):
+        conn, fid = db
+        import app.core.database as db_module
+        aid = _insert_article_body(conn, fid, content_text="Hello body", language_detected="en")
+        done = []
+        worker.article_translated.connect(lambda a, t: done.append((a, t)))
+        worker.request_article_translation(aid)
+        with patch.object(db_module, "DB_PATH", Path(conn.execute("PRAGMA database_list").fetchone()[2])), \
+             patch("app.core.translation_worker.translate", return_value="Corpo em português"):
+            n = worker._run_cycle()
+        assert n >= 1
+        assert (aid, "Corpo em português") in done
+        row = conn.execute("SELECT content_text_translated FROM articles WHERE id = ?", (aid,)).fetchone()
+        assert row[0] == "Corpo em português"
+
+
+# ---------------------------------------------------------------------------
 # ArticleList — exibição da tradução
 # ---------------------------------------------------------------------------
 

@@ -285,6 +285,21 @@ class TestDualLanguage:
         assert "has_translation" not in text
         assert "## Tradução" not in text
 
+    def test_auto_dual_language_from_db(self, env):
+        """Se content_text_translated existe no banco, arquiva dual-language sem param."""
+        conn, fid, archive = env
+        from app.core.archiver import archive_article
+        aid = _insert_article(conn, fid, content_text="Original body.")
+        conn.execute(
+            "UPDATE articles SET content_text_translated = ? WHERE id = ?",
+            ("Corpo traduzido.", aid),
+        )
+        conn.commit()
+        text = _read(archive_article(aid, archive, conn=conn))  # sem translated_text
+        assert "has_translation: true" in text
+        assert "Original body." in text
+        assert "Corpo traduzido." in text
+
 
 # ---------------------------------------------------------------------------
 # Gravação, is_saved, colisão, erro

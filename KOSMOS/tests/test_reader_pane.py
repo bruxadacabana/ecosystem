@@ -58,13 +58,16 @@ def _insert_article(
     content_excerpt: str | None = "Resumo do feed.",
     content_text: str | None = None,
     is_scraped: int = 0,
+    content_text_translated: str | None = None,
 ) -> int:
     cur = conn.execute(
         """
-        INSERT INTO articles (feed_id, url, title, content_excerpt, content_text, is_scraped)
-        VALUES (?, ?, ?, ?, ?, ?)
+        INSERT INTO articles
+            (feed_id, url, title, content_excerpt, content_text, is_scraped, content_text_translated)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
         """,
-        (feed_id, url, "Título do Artigo", content_excerpt, content_text, is_scraped),
+        (feed_id, url, "Título do Artigo", content_excerpt, content_text, is_scraped,
+         content_text_translated),
     )
     conn.commit()
     return cur.lastrowid
@@ -194,3 +197,69 @@ def test_on_scrape_done_ignores_other_article(env):
 
     assert reader._body_lbl.text() == "Resumo A."
     assert not reader._fulltext_btn.isHidden()
+
+
+# ---------------------------------------------------------------------------
+# Tradução sob demanda (P2)
+# ---------------------------------------------------------------------------
+
+def test_translate_button_requests_translation(env):
+    reader, conn, fid = env
+    aid = _insert_article(conn, fid, content_text="English body text.")
+    reader.show_article(aid)
+
+    captured = []
+    reader.translate_requested.connect(lambda a: captured.append(a))
+
+    assert reader._translate_btn.text() == "Traduzir"
+    reader._on_translate_clicked()
+
+    assert captured == [aid]
+    assert not reader._translate_btn.isEnabled()  # "Traduzindo…"
+
+
+def test_on_article_translated_shows_translation(env):
+    reader, conn, fid = env
+    aid = _insert_article(conn, fid, content_text="English body text.")
+    reader.show_article(aid)
+    assert reader._body_lbl.text() == "English body text."
+
+    reader.on_article_translated(aid, "Texto do corpo em português.")
+
+    assert reader._body_lbl.text() == "Texto do corpo em português."
+    assert reader._translate_btn.text() == "Ver original"
+
+
+def test_translation_toggle(env):
+    reader, conn, fid = env
+    aid = _insert_article(conn, fid, content_text="Original EN.")
+    reader.show_article(aid)
+    reader.on_article_translated(aid, "Tradução PT.")
+    assert reader._body_lbl.text() == "Tradução PT."
+
+    # alterna para o original
+    reader._on_translate_clicked()
+    assert reader._body_lbl.text() == "Original EN."
+    assert reader._translate_btn.text() == "Ver tradução"
+
+    # alterna de volta para a tradução
+    reader._on_translate_clicked()
+    assert reader._body_lbl.text() == "Tradução PT."
+    assert reader._translate_btn.text() == "Ver original"
+
+
+def test_existing_translation_loaded_on_open(env):
+    reader, conn, fid = env
+    aid = _insert_article(conn, fid, content_text="EN body", content_text_translated="Corpo PT")
+    reader.show_article(aid)
+    # tradução já existe → botão oferece alternância, original mostrado por padrão
+    assert reader._translate_btn.text() == "Ver tradução"
+    assert reader._body_lbl.text() == "EN body"
+
+
+def test_on_article_translated_ignores_other(env):
+    reader, conn, fid = env
+    aid = _insert_article(conn, fid, content_text="EN body")
+    reader.show_article(aid)
+    reader.on_article_translated(aid + 999, "não deve aparecer")
+    assert reader._body_lbl.text() == "EN body"
