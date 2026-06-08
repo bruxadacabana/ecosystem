@@ -6836,7 +6836,7 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
 
 #### Fase 6 — Tradução
 - [x] **translator.py** — argostranslate (offline) como padrão; LOGOS como opção quando disponível e configurado. Idioma alvo definido em Settings. *(módulo + config `translation_backend` prontos; par de idiomas argos é instalado sob demanda na 1ª tradução. Falta a UI de Settings p/ editar `translation_backend`/`default_translation_lang` — pendente junto da tela de Settings.)*
-- [ ] **TranslationWorker (QThread P3)** — traduz títulos/resumos de cards automaticamente em background (newest-first, em paralelo com análise).
+- [x] **TranslationWorker (QThread P3)** — traduz títulos/resumos de cards automaticamente em background (newest-first, em paralelo com análise). *(traduz **títulos** → `title_translated`, exibidos nos cards com atualização ao vivo; "resumos" não têm coluna no schema e o card não os mostra, então ficaram fora — a tradução do corpo/resumo é coberta pela tradução de artigo sob demanda, próximo item.)*
 - [ ] **Tradução de artigo sob demanda (P2)** — botão "Traduzir" no reader_pane. Original sempre disponível com alternância. Dual-language no archive se traduzido.
 - [x] **Testes: translator.py** — tradução de título, fallback entre backends. *(16 testes em test_translator.py: argos/logos, detecção de origem, fallback entre backends, no-op mesmo idioma, config; cobertos junto da implementação do translator.py.)*
 

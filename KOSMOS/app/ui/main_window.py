@@ -19,6 +19,7 @@ Conexões de sinais:
   FetchWorker.cycle_done     → statusbar (resumo do ciclo)
   ReaderPane.scrape_requested → ScraperWorker.request_scrape (P1, texto completo)
   ScraperWorker.scrape_done  → ReaderPane.on_scrape_done + statusbar
+  TranslationWorker.title_translated → ArticleList.on_title_translated (P3, tradução de títulos)
 """
 from __future__ import annotations
 
@@ -35,6 +36,7 @@ from PySide6.QtWidgets import (
 
 from app.core.fetch_worker import FetchWorker
 from app.core.scraper_worker import ScraperWorker
+from app.core.translation_worker import TranslationWorker
 from app.ui.views.article_list import ArticleList
 from app.ui.views.feed_sidebar import ALL_FEEDS_ID, FeedSidebar
 from app.ui.views.reader_pane import ReaderPane
@@ -121,6 +123,15 @@ class MainWindow(QMainWindow):
         self._scraper.start()
         log.info("ScraperWorker iniciado.")
 
+        # TranslationWorker (P3): traduz títulos dos cards em background.
+        self._translator = TranslationWorker(
+            self.config.default_translation_lang,
+            self.config.translation_backend,
+        )
+        self._translator.title_translated.connect(self._article_list.on_title_translated)
+        self._translator.start()
+        log.info("TranslationWorker iniciado.")
+
     def _initial_load(self) -> None:
         self._sidebar.load_feeds()
         self._article_list.load_articles(ALL_FEEDS_ID)
@@ -162,6 +173,9 @@ class MainWindow(QMainWindow):
         if self._scraper.isRunning():
             self._scraper.stop()
             self._scraper.wait(3000)
+        if self._translator.isRunning():
+            self._translator.stop()
+            self._translator.wait(3000)
         try:
             save_config(self.config)
         except OSError as exc:
