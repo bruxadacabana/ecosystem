@@ -6856,6 +6856,19 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
 - [ ] **stats_view.py — dashboard** — artigos lidos por dia/semana, feeds mais consumidos, distribuição de sentimento ao longo do tempo, viés político médio do que está sendo consumido (indicador de bolha editorial), cobertura por tema/entidade rastreada.
 - [ ] **Testes: highlights** — criar/ler/exportar; stats — cálculos de leitura, distribuição de sentimento.
 
+#### Fase Extra — Fixes
+- [ ] **Logs do KOSMOS não chegam à aba Monitor do HUB — descasamento de caminho do arquivo de log** *(verificado 2026-06-08; não corrigido por ora a pedido da usuária)*
+  - **Sintoma:** a aba Monitor do HUB mostra "sem logs" para o KOSMOS (enquanto AKASHA e Mnemosyne aparecem). A usuária pediu que o KOSMOS gere logs de todo o funcionamento e que eles sejam transmitidos para a aba Monitor.
+  - **Causa raiz:** descasamento entre onde o KOSMOS escreve o log e onde o HUB o lê.
+    - HUB lê: `read_app_log("kosmos")` em `HUB/src-tauri/src/commands/config.rs` (~linha 155) procura **`{sync_root}/kosmos/kosmos.log`** (padrão fixo `{sync_root}/{app}/{app}.log`; fallback `{sync_root}/{app}.bak/{app}.log`).
+    - KOSMOS escreve: `KOSMOS/app/utils/paths.py` define `LOG_DIR = LOCAL_DATA_DIR/"logs"` e `LOG_PATH = LOG_DIR/"kosmos.log"`, ou seja **`{LOCALAPPDATA|XDG_DATA_HOME}/kosmos/logs/kosmos.log`** (local, fora do sync_root). `main.py` chama `setup_logger(LOG_PATH)`.
+  - **O que JÁ está certo (não mexer):** o KOSMOS já chama `setup_logger` no startup (logger raiz DEBUG→arquivo + INFO→console, `app/utils/logger.py`); a `MonitoramentoView.tsx` do HUB já tem `useKosmosLogs` → `cmd.readAppLog('kosmos', 10)`. Só o caminho do arquivo está divergente.
+  - **Convenção correta (espelhar):** `Mnemosyne/core/logger.py` resolve `{sync_root}/mnemosyne/mnemosyne.log` (lê `sync_root` do ecosystem.json) "onde o HUB pode ler", com fallback local `Mnemosyne/logs/mnemosyne.log`.
+  - **Fix proposto:** alterar a resolução do log do KOSMOS para preferir **`{sync_root}/kosmos/kosmos.log`** via `ecosystem_client.get_sync_root()` (já disponível em `ecosystem_client.py` ~linha 617), com fallback para `LOCAL_DATA_DIR/logs/kosmos.log` quando `sync_root` não estiver configurado/acessível. Local mais limpo: `paths.py` (`_resolve_log_path()`), mantendo `setup_logger(LOG_PATH)` no `main.py`. Garantir criação do diretório.
+  - **Ressalva:** logs em `sync_root` sincronizam entre máquinas (mesma situação do Mnemosyne) — aceitável pela convenção; se virar problema de conflito, é decisão ecossistêmica separada.
+  - **Testes:** com `sync_root` configurado, o handler aponta para `{sync_root}/kosmos/kosmos.log`; sem `sync_root`, cai no caminho local; o HUB `read_app_log("kosmos")` encontra as linhas após uma escrita.
+  - **Correlato (observabilidade):** confirmar, ao corrigir, que o KOSMOS loga de fato "o funcionamento inteiro" (workers Fetch/Scraper/Translation, análise, archiver, erros) em níveis apropriados — parte da diretiva "TUDO gera logs".
+
 ### Pesquisa: Emoções em Agentes IA — Interpretabilidade, Appraisal e Modulação Comportamental | 2026-05-20
 > Contexto: três sessões de pesquisa de 2026-05-20 cobrindo fundamentos teóricos e empíricos para implementação de estados emocionais funcionais em AKASHA e Mnemosyne: (1) Interpretabilidade Mecanicista de Emoções, Validade de VADER, MemoryBank e LLM como Scorer; (2) Geração de Estados Emocionais Próprios — Appraisal Theory (OCC, CPM de Scherer, EMA), arquiteturas (WASABI, ALMA, EILS), mapeamento para contexto de indexação; (3) Modulação Comportamental por Emoção e feedback confirmed/dismissed como Evento Afetivo. Resultado: fundamento para revisar os itens pendentes de `### AKASHA/Mnemosyne — revisão do modelo de saliência | 2026-05-19`.
 
