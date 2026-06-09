@@ -536,13 +536,84 @@ AKASHA/
 | Serviço | Uso | Como configurar |
 |---------|-----|----------------|
 | LOGOS (llama-server) | Reflexão, insights, extração de tópicos, expansão de query | Automático via `ecosystem_client` |
-| SearXNG (self-hosted) | Busca web com múltiplos engines (recomendado) | `akasha.web_search_backend` no `ecosystem.json`; instalar via `yay -S searxng-git` no CachyOS; porta padrão 8888 |
+| SearXNG (self-hosted) | Busca web com múltiplos engines (recomendado) | `akasha.web_search_backend` no `ecosystem.json` (painel Busca do HUB). Ver **[Rodando o SearXNG](#rodando-o-searxng-fedora--cachyos--windows-10)** para instalação por SO. |
 | Unpaywall | Download de papers acadêmicos | `akasha.unpaywall_email` no `ecosystem.json` |
 | qBittorrent | Downloads via torrent | `akasha.qbt_*` no `ecosystem.json` |
 
-**SearXNG vs DuckDuckGo:** sem SearXNG configurado, o AKASHA usa DDG como fallback (~20–50 resultados por query). Com SearXNG, agrega múltiplos engines em paralelo (~100 resultados) sem comprometer privacidade (tráfego passa pelo servidor local). Consultar `### AKASHA — SearXNG self-hosted como backend de busca` no `TODO.md` para instruções de instalação.
+**SearXNG vs DuckDuckGo:** sem SearXNG configurado, o AKASHA usa DDG como fallback (~20–50 resultados por query). Com SearXNG, agrega múltiplos engines em paralelo (~100 resultados) sem comprometer privacidade (o tráfego passa pelo seu servidor/instância). Ver a seção abaixo para instalar.
 
 Sem nenhum desses serviços, o AKASHA funciona normalmente como buscador local puro.
+
+---
+
+## Rodando o SearXNG (Fedora · CachyOS · Windows 10)
+
+O SearXNG é o backend **recomendado** para a busca web (agrega Google/Bing/Startpage/Marginalia/etc. em paralelo, sem rate limit e sem rastreamento). O AKASHA aponta para uma instância via `akasha.web_search_backend` no `ecosystem.json` — editável no **painel Busca do HUB**. Se o campo estiver vazio ou a instância offline, o AKASHA cai para o **DuckDuckGo** automaticamente.
+
+> **Modelo de deployment.** O jeito mais simples é ter **uma** instância SearXNG na rede (num servidor sempre ligado) e todas as máquinas (Windows, CachyOS, laptop) apontarem para ela. É assim que o ecossistema roda hoje: uma instância no servidor Fedora (Dell T410) em `http://192.168.0.252:8080`, e cada app usa essa URL.
+>
+> **Fallback local:** rodar uma instância SearXNG **local** em cada máquina como fallback automático do servidor remoto está **planejado** (ver "AKASHA — SearXNG primário+fallback" no `TODO.md`), mas **ainda não implementado** — hoje o AKASHA usa **uma** URL (`web_search_backend`). Você pode apontá-la para o servidor remoto **ou** para uma instância local; as instruções por SO abaixo servem para os dois casos.
+
+### Pré-requisitos comuns (qualquer instância)
+
+Para o AKASHA consumir o SearXNG, o `settings.yml` da instância precisa de:
+
+```yaml
+search:
+  formats:
+    - html
+    - json        # OBRIGATÓRIO — sem 'json' o AKASHA recebe HTTP 403
+server:
+  limiter: false  # evita bloqueio das requisições do AKASHA
+  bind_address: "0.0.0.0"   # só se outras máquinas forem acessar (servidor de rede)
+```
+
+Depois, configure o AKASHA (painel **Busca** do HUB, ou direto no `ecosystem.json`):
+
+```jsonc
+"akasha": { "web_search_backend": "http://192.168.0.252:8080" }   // ou http://localhost:8080
+```
+
+Teste rápido (deve retornar JSON, não 403):
+`curl "http://SEU_HOST:PORTA/search?q=teste&format=json"`
+
+### Fedora (e Fedora Server — método recomendado: Docker)
+
+É o método do servidor T410. Usa a stack oficial `searxng-docker` (SearXNG + Valkey/Redis):
+
+```bash
+sudo dnf install -y docker docker-compose-plugin
+sudo systemctl enable --now docker
+git clone https://github.com/searxng/searxng-docker.git ~/searxng && cd ~/searxng
+# Edite searxng/settings.yml: gere um 'secret_key', adicione 'json' em search.formats,
+# ponha server.limiter: false e (se for servir a rede) bind_address 0.0.0.0.
+sudo docker compose up -d
+```
+A instância sobe na porta definida no compose (no T410: **8080**, HTTP, sem TLS). Reiniciar após editar config: `sudo docker restart searxng-core`. Settings de referência do T410: `core-config/settings.yml`.
+
+### CachyOS / Arch
+
+Duas opções:
+
+- **Docker** (igual ao Fedora — recomendado p/ consistência): `sudo pacman -S docker docker-compose` e siga os passos do `searxng-docker` acima.
+- **Script do projeto (sem Docker)**: `bash AKASHA/scripts/setup_searxng.sh` — clona o SearXNG, cria venv via `uv`, aplica `AKASHA/scripts/searxng_settings.yml`, registra um serviço **systemd --user** e sobe na porta **8888** (`http://localhost:8888`). Requer `git`, `uv` e systemd de usuário. *(A instalação antiga via `yay -S searxng-git` foi descontinuada.)*
+
+### Windows 10 (via Docker Desktop)
+
+O SearXNG não tem build nativo de Windows — roda em contêiner. Use o **Docker Desktop** (backend WSL2):
+
+1. Instale o [Docker Desktop](https://www.docker.com/products/docker-desktop/) e habilite a integração WSL2.
+2. No WSL2 (ou no PowerShell, com Docker no PATH):
+   ```bash
+   git clone https://github.com/searxng/searxng-docker.git && cd searxng-docker
+   # edite searxng/settings.yml (secret_key, formats: + json, limiter: false)
+   docker compose up -d
+   ```
+3. Aponte o AKASHA para `http://localhost:8080`.
+
+> Na prática, no Windows costuma ser mais simples **apontar para o servidor SearXNG da rede** (`http://192.168.0.252:8080`) do que manter o Docker Desktop rodando localmente.
+
+> ⚠️ As instruções de Docker acima seguem o fluxo padrão do `searxng-docker`; os passos exatos (nomes de arquivo/serviço, porta) podem variar conforme a versão — consulte o README do [searxng-docker](https://github.com/searxng/searxng-docker) se algo divergir.
 
 ---
 
