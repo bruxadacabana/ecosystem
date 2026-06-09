@@ -615,6 +615,53 @@ O SearXNG não tem build nativo de Windows — roda em contêiner. Use o **Docke
 
 > ⚠️ As instruções de Docker acima seguem o fluxo padrão do `searxng-docker`; os passos exatos (nomes de arquivo/serviço, porta) podem variar conforme a versão — consulte o README do [searxng-docker](https://github.com/searxng/searxng-docker) se algo divergir.
 
+### Fontes de busca (engines): quais habilitar e como
+
+Nem todo engine do SearXNG funciona bem em uso automatizado — vários bloqueiam bots, retornam spam ou nada. A curadoria abaixo foi **validada por teste** (ver tabela completa no `GUIDE.md`). Os engines vivem em `settings.yml`, na seção `engines:`; cada um tem `disabled: true|false`:
+
+```yaml
+engines:
+  - name: startpage
+    disabled: false
+  - name: duckduckgo
+    disabled: true     # CAPTCHA permanente em automação
+```
+
+**Habilitar (validados, contribuem resultados):**
+
+| Engine | Categoria | Por quê |
+|--------|-----------|---------|
+| **Startpage** | geral | Mais confiável; proxy do Google sem tracking |
+| **Bing** | geral | Confiável; índice Microsoft |
+| **Google** | geral | Bom volume (às vezes timeout/CAPTCHA sob uso intenso) |
+| **mwmbl** | geral/indie | Índice **independente** (~500M URLs); não bloqueia o IP; traz resultados únicos que ~dobram a contagem em queries de nicho |
+| **arXiv** | acadêmico | Artigos científicos |
+| **Semantic Scholar** | acadêmico | Artigos acadêmicos |
+
+**Desabilitar (não funcionam bem em automação):**
+
+| Engine | Motivo |
+|--------|--------|
+| **DuckDuckGo** | CAPTCHA permanente / bloqueio por IP (`SearxEngineCaptchaException`). *(Ainda usado pelo AKASHA como **fallback final** via biblioteca própria — fora do SearXNG.)* |
+| **Brave** | Rate limit agressivo (suspensão de ~180s) |
+| **Qwant** | SEO spam em queries de nicho |
+| **Yahoo** | Wrapper do Bing (redundante) + seletores instáveis |
+| **Wikipedia / Wikidata** | 0 resultados nas queries testadas |
+| **Mojeek** | Depende da rede: funciona em algumas, mas "access denied" para o IP do servidor T410 — deixe habilitado e veja se contribui; se vier 0, desabilite |
+
+Após editar `settings.yml`, reinicie a instância (Docker: `docker restart searxng-core`).
+
+### Marginalia (web indie/nicho) — configurada **direto no AKASHA**, não no SearXNG
+
+A [Marginalia](https://marginalia-search.com) é o melhor engine para a "web pequena" (blogs, zines, ativismo, crafts — conteúdo sem SEO pesado), mas **não** dá para habilitar pelo SearXNG do servidor (lá ela está inativa e exige chave). O AKASHA a consulta **diretamente**, em paralelo ao SearXNG, mesclando via RRF.
+
+- **Funciona sem chave:** usa a API pública (rate limit compartilhado; sob saturação retorna vazio sem quebrar a busca). Nada a fazer.
+- **Chave própria (recomendado p/ uso frequente):** rate limit separado. Peça uma chave gratuita por e-mail a `contact@marginalia-search.com` e cole em **Settings → Marginalia API key** (campo `akasha.marginalia_api_key` no `ecosystem.json`). Vazio = usa a chave pública.
+
+### Resumo do pipeline web
+
+Por busca, o AKASHA consulta em paralelo: **SearXNG** (engines curados acima) **+ Marginalia** (direto) **+ mwmbl** (quando os outros vêm escassos), funde tudo via RRF e deduplica por URL. Se **nada** disso responder, cai para o **DuckDuckGo** (biblioteca `ddgs`) como último recurso. O **Stract** foi avaliado mas a API pública dele saiu do ar (2026-06-05) — não está em uso.
+
 ---
 
 ## Rodar
