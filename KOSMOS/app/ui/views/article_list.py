@@ -68,8 +68,9 @@ class ArticleCard(QFrame):
         layout.setContentsMargins(12, 8, 12, 8)
         layout.setSpacing(3)
 
-        # Título — negrito se não-lido
-        title_lbl = QLabel(data.get("title") or "(sem título)")
+        # Título — prefere a tradução (no idioma da usuária) quando disponível;
+        # negrito se não-lido.
+        title_lbl = QLabel(data.get("title_translated") or data.get("title") or "(sem título)")
         title_lbl.setWordWrap(True)
         title_lbl.setObjectName("card_title")
         if not data.get("is_read"):
@@ -77,6 +78,7 @@ class ArticleCard(QFrame):
             font.setBold(True)
             title_lbl.setFont(font)
         layout.addWidget(title_lbl)
+        self._title_lbl = title_lbl
 
         # Linha de metadados: feed · data · tipo · tempo leitura
         meta_parts: list[str] = []
@@ -100,6 +102,11 @@ class ArticleCard(QFrame):
     @property
     def article_id(self) -> int:
         return self._article_id
+
+    def set_title(self, text: str) -> None:
+        """Atualiza o texto do título (usado ao receber a tradução ao vivo)."""
+        if text:
+            self._title_lbl.setText(text)
 
 
 class ArticleList(QWidget):
@@ -156,7 +163,7 @@ class ArticleList(QWidget):
             if feed_id == ALL_FEEDS_ID:
                 rows = _conn.execute(
                     """
-                    SELECT a.id, a.title, a.published_at, a.article_type,
+                    SELECT a.id, a.title, a.title_translated, a.published_at, a.article_type,
                            a.estimated_reading_min, a.is_read,
                            COALESCE(f.title, f.url) AS feed_title
                       FROM articles a
@@ -169,7 +176,7 @@ class ArticleList(QWidget):
             else:
                 rows = _conn.execute(
                     """
-                    SELECT a.id, a.title, a.published_at, a.article_type,
+                    SELECT a.id, a.title, a.title_translated, a.published_at, a.article_type,
                            a.estimated_reading_min, a.is_read,
                            COALESCE(f.title, f.url) AS feed_title
                       FROM articles a
@@ -199,6 +206,16 @@ class ArticleList(QWidget):
         if self._current_feed_id in (feed_id, ALL_FEEDS_ID):
             log.debug("Feed %d atualizado (%d novos) — recarregando lista.", feed_id, new_count)
             self.load_articles(self._current_feed_id)
+
+    def on_title_translated(self, article_id: int, translated_title: str) -> None:
+        """Slot: TranslationWorker traduziu um título — atualiza o card ao vivo."""
+        for i in range(self._list.count()):
+            item = self._list.item(i)
+            if item.data(Qt.ItemDataRole.UserRole) == article_id:
+                card = self._list.itemWidget(item)
+                if card is not None:
+                    card.set_title(translated_title)
+                break
 
     def article_count(self) -> int:
         """Retorna o número de itens atualmente na lista."""

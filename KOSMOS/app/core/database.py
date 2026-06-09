@@ -65,6 +65,7 @@ CREATE TABLE IF NOT EXISTS articles (
     title_translated        TEXT,                       -- tradução automática para idioma configurado
     content_excerpt         TEXT,                       -- trecho fornecido pelo feed (description)
     content_text            TEXT,                       -- texto completo extraído via scraping
+    content_text_translated TEXT,                       -- tradução do corpo (sob demanda, Fase 6)
     published_at            TEXT,                       -- ISO8601
     author                  TEXT,
     estimated_reading_min   INTEGER,                    -- tempo estimado (palavras / 200 wpm)
@@ -202,6 +203,7 @@ def init_db() -> None:
             conn.execute("PRAGMA foreign_keys = ON")
             conn.execute("PRAGMA journal_mode = WAL")
             conn.executescript(_DDL)
+            _ensure_columns(conn)
             _reset_stale_analyses(conn)
             log.info("Banco inicializado em %s.", DB_PATH)
         finally:
@@ -209,6 +211,26 @@ def init_db() -> None:
     except sqlite3.OperationalError as exc:
         log.critical("Falha ao inicializar banco: %s", exc)
         raise
+
+
+def _ensure_columns(conn: sqlite3.Connection) -> None:
+    """Adiciona colunas novas a bancos pré-existentes (ALTER idempotente).
+
+    `CREATE TABLE IF NOT EXISTS` não altera tabelas já criadas, então colunas novas
+    precisam de ALTER. Cada ALTER é best-effort: se a coluna já existe, o erro é
+    logado em debug e ignorado (não há `except: pass` silencioso).
+    """
+    _new_columns = [
+        ("articles", "content_text_translated", "TEXT"),
+    ]
+    for table, column, coltype in _new_columns:
+        try:
+            conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {coltype}")
+            log.info("Coluna %s.%s adicionada (migração).", table, column)
+        except sqlite3.OperationalError as exc:
+            # "duplicate column name" → já existe; qualquer outro erro é logado também
+            log.debug("ALTER %s.%s ignorado: %s", table, column, exc)
+    conn.commit()
 
 
 def _reset_stale_analyses(conn: sqlite3.Connection) -> None:

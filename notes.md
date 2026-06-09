@@ -23,6 +23,8 @@ key = 11c345dcaebdada6070a5545e7245f5ac91fa265d24324b8b57a5d6ae11c8609
 
 ## próximo: 
 
+### AKASHA — Ferramenta sem IA, SearXNG primário+fallback, histórico sincronizado | 2026-06-08
+
 ### Prioridade de IA: análise da Mnemosyne (core, P2) acima do fundo da AKASHA (P3) | 2026-06-05
 
 ### HUB (LOGOS) — validar embed-server em CPU por padrão (BUG-028) | 2026-06-03
