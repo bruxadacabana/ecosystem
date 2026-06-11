@@ -32,9 +32,11 @@ from __future__ import annotations
 import logging
 
 from PySide6.QtCore import Qt, QTimer
-from PySide6.QtGui import QCloseEvent
+from PySide6.QtGui import QCloseEvent, QCursor
 from PySide6.QtWidgets import (
+    QInputDialog,
     QMainWindow,
+    QMenu,
     QSplitter,
     QStatusBar,
     QTabWidget,
@@ -45,9 +47,11 @@ from app.core.analysis_worker import AnalysisWorker
 from app.core.fetch_worker import FetchWorker
 from app.core.scraper_worker import ScraperWorker
 from app.core.translation_worker import TranslationWorker
+from app.core.investigations import add_article, create_investigation, list_investigations
 from app.ui.views.analysis_tab import AnalysisTab
 from app.ui.views.article_list import ArticleList
 from app.ui.views.entity_view import EntityView
+from app.ui.views.investigation_view import InvestigationView
 from app.ui.views.feed_sidebar import ALL_FEEDS_ID, FeedSidebar
 from app.ui.views.reader_pane import ReaderPane
 from app.utils.config import KosmosConfig, save_config
@@ -100,6 +104,10 @@ class MainWindow(QMainWindow):
         self._analysis_tab.set_pane("entities", self._entity_view)
         self._entity_view.article_selected.connect(self._open_article_from_analysis)
 
+        self._investigation_view = InvestigationView()
+        self._analysis_tab.set_pane("investigations", self._investigation_view)
+        self._investigation_view.article_selected.connect(self._open_article_from_analysis)
+
         tabs = QTabWidget()
         self._reading_tab_index = tabs.addTab(splitter, "Leitura")
         self._analysis_tab_index = tabs.addTab(self._analysis_tab, "Análise")
@@ -115,6 +123,9 @@ class MainWindow(QMainWindow):
         self._sidebar.feed_selected.connect(self._on_feed_selected)
         self._article_list.article_selected.connect(self._on_article_selected)
         self._reader.article_read.connect(self._on_article_read)
+        # "Adicionar à investigação" — leitor e menu de contexto do card.
+        self._reader.add_to_investigation_requested.connect(self._on_add_to_investigation)
+        self._article_list.add_to_investigation_requested.connect(self._on_add_to_investigation)
 
     def _start_worker(self) -> None:
         self._worker = FetchWorker(self)
@@ -171,14 +182,40 @@ class MainWindow(QMainWindow):
         log.info("Carga inicial concluída.")
 
     def _on_tab_changed(self, index: int) -> None:
-        """Ao abrir a aba Análise, recarrega a lista de entidades (cobre análises recentes)."""
+        """Ao abrir a aba Análise, recarrega entidades e investigações (cobre o que mudou)."""
         if index == self._analysis_tab_index:
             self._entity_view.load_entities()
+            self._investigation_view.load_investigations()
 
     def _open_article_from_analysis(self, article_id: int) -> None:
-        """Clique num artigo do rastreador → abre na aba de Leitura."""
+        """Clique num artigo de uma ferramenta de análise → abre na aba de Leitura."""
         self._tabs.setCurrentIndex(self._reading_tab_index)
         self._reader.show_article(article_id)
+
+    def _on_add_to_investigation(self, article_id: int) -> None:
+        """Menu de escolha de pasta (ou criar nova) para adicionar o artigo."""
+        menu = QMenu(self)
+        for inv in list_investigations():
+            act = menu.addAction(inv["name"])
+            act.setData(inv["id"])
+        if menu.actions():
+            menu.addSeparator()
+        new_act = menu.addAction("Nova investigação…")
+        chosen = menu.exec(QCursor.pos())
+        if chosen is None:
+            return
+        if chosen is new_act:
+            name, ok = QInputDialog.getText(self, "Nova investigação", "Nome:")
+            if not ok or not name.strip():
+                return
+            inv_id = create_investigation(name.strip())
+        else:
+            inv_id = chosen.data()
+        if inv_id is None:
+            return
+        add_article(int(inv_id), article_id)
+        self.statusBar().showMessage("Artigo adicionado à investigação.", 3000)
+        self._investigation_view.load_investigations()
 
     # ------------------------------------------------------------------
     # Slots

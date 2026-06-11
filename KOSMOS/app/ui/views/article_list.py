@@ -27,6 +27,7 @@ from PySide6.QtWidgets import (
     QLabel,
     QListWidget,
     QListWidgetItem,
+    QMenu,
     QVBoxLayout,
     QWidget,
 )
@@ -203,6 +204,7 @@ class ArticleList(QWidget):
     """Painel central: lista de cards de artigos para o feed selecionado."""
 
     article_selected = Signal(int)  # article_id
+    add_to_investigation_requested = Signal(int)  # article_id — via menu de contexto do card
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -219,6 +221,8 @@ class ArticleList(QWidget):
         self._list.setSpacing(0)
         self._list.setUniformItemSizes(False)
         self._list.itemClicked.connect(self._on_item_clicked)
+        self._list.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self._list.customContextMenuRequested.connect(self._on_context_menu)
         layout.addWidget(self._list)
 
         self._placeholder = QLabel("Selecione um feed para ver os artigos.")
@@ -360,3 +364,22 @@ class ArticleList(QWidget):
         if article_id is not None:
             log.debug("Artigo selecionado: id=%d", article_id)
             self.article_selected.emit(article_id)
+
+    def _on_context_menu(self, pos) -> None:
+        """Menu de contexto do card: 'Adicionar à investigação…' → emite o sinal."""
+        item = self._list.itemAt(pos)
+        if item is None:
+            return
+        article_id = item.data(Qt.ItemDataRole.UserRole)
+        if article_id is None:
+            return
+        menu = QMenu(self)
+        act = menu.addAction("Adicionar à investigação…")
+        if menu.exec(self._list.viewport().mapToGlobal(pos)) is act:
+            self._request_add_to_investigation(item)
+
+    def _request_add_to_investigation(self, item: QListWidgetItem) -> None:
+        """Resolve o article_id do item e emite o sinal (separado do exec, testável)."""
+        article_id = item.data(Qt.ItemDataRole.UserRole)
+        if article_id is not None:
+            self.add_to_investigation_requested.emit(int(article_id))

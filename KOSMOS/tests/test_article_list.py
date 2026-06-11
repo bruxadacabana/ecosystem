@@ -178,3 +178,13 @@ class TestArticleList:
         lst = ArticleList()
         lst.load_articles(ALL_FEEDS_ID, conn=conn)
         assert lst._card_for(12345) is None
+
+    def test_context_menu_request_emits_add_to_investigation(self, qapp, db):
+        conn, fid, _ = db
+        aid = _insert(conn, fid, title="X")
+        lst = ArticleList()
+        lst.load_articles(ALL_FEEDS_ID, conn=conn)
+        got = []
+        lst.add_to_investigation_requested.connect(got.append)
+        lst._request_add_to_investigation(lst._list.item(0))
+        assert got == [aid]

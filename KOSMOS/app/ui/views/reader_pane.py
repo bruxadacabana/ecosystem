@@ -148,6 +148,7 @@ class ReaderPane(QWidget):
     scrape_requested = Signal(int, str)  # (article_id, url) — pedido P1 de texto completo
     translate_requested = Signal(int)    # article_id — pedido P2 de tradução do corpo
     analysis_requested = Signal(int)     # article_id — pedido P1 de análise completa (Call B)
+    add_to_investigation_requested = Signal(int)  # article_id — adicionar a uma pasta de investigação
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -248,6 +249,14 @@ class ReaderPane(QWidget):
         self._translate_btn.clicked.connect(self._on_translate_clicked)
         self._layout.addSpacing(8)
         self._layout.addWidget(self._translate_btn, alignment=Qt.AlignmentFlag.AlignLeft)
+
+        # Botão "Adicionar à investigação" (Fase 7) — entrega o artigo atual ao main_window.
+        self._investigation_btn = QPushButton("Adicionar à investigação")
+        self._investigation_btn.setObjectName("reader_investigation_btn")
+        self._investigation_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._investigation_btn.clicked.connect(self._on_add_to_investigation)
+        self._layout.addSpacing(8)
+        self._layout.addWidget(self._investigation_btn, alignment=Qt.AlignmentFlag.AlignLeft)
 
         self._layout.addStretch()
         self._set_content_visible(False)
@@ -581,6 +590,11 @@ class ReaderPane(QWidget):
             if should_close:
                 _conn.close()
 
+    def _on_add_to_investigation(self) -> None:
+        """Botão 'Adicionar à investigação' → entrega o artigo atual ao main_window."""
+        if self._current_article_id is not None:
+            self.add_to_investigation_requested.emit(self._current_article_id)
+
     def _set_content_visible(self, visible: bool) -> None:
         for widget in (
             self._title_lbl,
@@ -592,5 +606,6 @@ class ReaderPane(QWidget):
             self._fulltext_btn,
             self._fulltext_status,
             self._translate_btn,
+            self._investigation_btn,
         ):
             widget.setVisible(visible)

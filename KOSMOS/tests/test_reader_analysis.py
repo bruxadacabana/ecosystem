@@ -169,6 +169,15 @@ class TestReaderAnalysisSection:
         assert "Quem:" in reader._analysis_lbl.text() and "Y" in reader._analysis_lbl.text()
         assert "espectro direita" in reader._analysis_lbl.text()
 
+    def test_investigation_button_emits(self, env):
+        reader, conn, fid = env
+        aid = _insert(conn, fid)
+        reader.show_article(aid, conn=conn)
+        got = []
+        reader.add_to_investigation_requested.connect(got.append)
+        reader._on_add_to_investigation()
+        assert got == [aid]
+
     def test_analysis_done_ignored_when_not_current(self, env):
         reader, conn, fid = env
         opened = _insert(conn, fid, ai_summary="aberto")

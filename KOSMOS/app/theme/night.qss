@@ -328,7 +328,7 @@ QLabel#analysis_placeholder {
     color: #7A6E58;
     font-size: 14px;
 }
-QLabel#entity_header {
+QLabel#entity_header, QLabel#investigation_header {
     color: #E8D9BE;
     font-size: 15px;
     font-weight: bold;
