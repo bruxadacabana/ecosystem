@@ -359,7 +359,8 @@ class TestWorkerUnits:
         worker.quick_analysis_done.connect(quick.append)
         worker.full_analysis_done.connect(full.append)
         with patch.object(aw, "analyze_quick", return_value=dict(_QUICK)), \
-             patch.object(aw, "analyze_full", return_value=dict(_FULL)):
+             patch.object(aw, "analyze_full", return_value=dict(_FULL)), \
+             patch.object(aw, "materialize_entity_links", return_value=0):
             assert worker._analyze_opened(aid) == 2
         assert quick == [aid] and full == [aid]
 
@@ -367,7 +368,8 @@ class TestWorkerUnits:
         conn, fid, _ = db
         aid = _insert(conn, fid, status="done", schema_version=ANALYSIS_SCHEMA_VERSION, ai_tags='["a"]')
         with patch.object(aw, "analyze_quick") as mq, \
-             patch.object(aw, "analyze_full", return_value=dict(_FULL)) as mf:
+             patch.object(aw, "analyze_full", return_value=dict(_FULL)) as mf, \
+             patch.object(aw, "materialize_entity_links", return_value=0):
             assert worker._analyze_opened(aid) == 1
         mq.assert_not_called()
         mf.assert_called_once()

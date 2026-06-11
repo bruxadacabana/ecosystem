@@ -328,6 +328,15 @@ QLabel#analysis_placeholder {
     color: #7A6E58;
     font-size: 14px;
 }
+QLabel#entity_header {
+    color: #E8D9BE;
+    font-size: 15px;
+    font-weight: bold;
+}
+QLabel#entity_sentiment, QLabel#entity_feeds {
+    color: #B8A882;
+    font-size: 12px;
+}
 
 /* ── Cards de artigos (ArticleList) ──────────────────────────────────── */
 QFrame#article_card {

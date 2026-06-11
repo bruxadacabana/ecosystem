@@ -1,0 +1,231 @@
+"""
+entities.py — ponte e consultas do rastreador de entidades (Fase 7).
+
+A análise rica (Call B) salva as entidades como JSON em `articles.ai_entities`. Para o
+rastreador cruzar artigos por entidade — e para o vínculo **sobreviver ao TTL de 6
+meses** que zera `ai_entities` — materializamos esse JSON nas tabelas relacionais
+`entities` (canônica, com notas da usuária) e `article_entities` (vínculo).
+
+`materialize_entity_links` é chamada pelo AnalysisWorker logo após `save_full_analysis`
+(incremental); `backfill_entity_links` preenche os artigos já analisados de uma vez.
+As demais funções servem o `entity_view.py`: lista de entidades, linha do tempo de
+cobertura, sentimento acumulado, quais feeds cobriram mais, e notas por entidade.
+"""
+from __future__ import annotations
+
+import json
+import logging
+import sqlite3
+
+from app.core.database import get_conn
+
+log = logging.getLogger("kosmos.entities")
+
+# tipo livre da análise (pt) → tipo canônico do schema (person|org|place|topic)
+_TYPE_MAP = {
+    "pessoa": "person", "person": "person", "people": "person",
+    "organizacao": "org", "organização": "org", "org": "org", "organization": "org", "empresa": "org",
+    "lugar": "place", "local": "place", "place": "place", "pais": "place", "país": "place", "cidade": "place",
+    "tema": "topic", "topico": "topic", "tópico": "topic", "topic": "topic", "assunto": "topic",
+}
+
+
+def _canonical_type(tipo: object) -> str:
+    return _TYPE_MAP.get(str(tipo or "").strip().lower(), "topic")
+
+
+def parse_entities(ai_entities: str | None) -> list[dict]:
+    """Decodifica o JSON de `ai_entities` numa lista de {nome, tipo}. [] em falha."""
+    if not ai_entities:
+        return []
+    try:
+        data = json.loads(ai_entities)
+    except (ValueError, TypeError):
+        return []
+    if not isinstance(data, list):
+        return []
+    out = []
+    for e in data:
+        if isinstance(e, dict) and str(e.get("nome", "")).strip():
+            out.append({"nome": str(e["nome"]).strip(), "tipo": str(e.get("tipo", "")).strip()})
+    return out
+
+
+def materialize_entity_links(
+    article_id: int, entities: list[dict], conn: sqlite3.Connection | None = None
+) -> int:
+    """Grava entidades de um artigo nas tabelas relacionais (upsert + religa).
+
+    Substitui os vínculos anteriores do artigo (re-análise muda entidades) e faz
+    upsert das entidades por (name, entity_type). Retorna o nº de vínculos criados.
+    """
+    _conn = conn if conn is not None else get_conn()
+    should_close = conn is None
+    try:
+        _conn.execute("DELETE FROM article_entities WHERE article_id = ?", (article_id,))
+        n = 0
+        for e in entities or []:
+            nome = str(e.get("nome", "")).strip()
+            if not nome:
+                continue
+            etype = _canonical_type(e.get("tipo"))
+            _conn.execute(
+                "INSERT OR IGNORE INTO entities (name, entity_type) VALUES (?, ?)", (nome, etype)
+            )
+            row = _conn.execute(
+                "SELECT id FROM entities WHERE name = ? AND entity_type = ?", (nome, etype)
+            ).fetchone()
+            if row is None:
+                continue
+            _conn.execute(
+                "INSERT OR IGNORE INTO article_entities (article_id, entity_id) VALUES (?, ?)",
+                (article_id, row["id"]),
+            )
+            n += 1
+        _conn.commit()
+        return n
+    except sqlite3.Error as exc:
+        log.error("entities: falha ao materializar vínculos do artigo %d: %s", article_id, exc)
+        return 0
+    finally:
+        if should_close:
+            _conn.close()
+
+
+def backfill_entity_links(conn: sqlite3.Connection | None = None) -> int:
+    """Materializa as entidades de todos os artigos que têm `ai_entities`. Retorna nº de artigos."""
+    _conn = conn if conn is not None else get_conn()
+    should_close = conn is None
+    try:
+        rows = _conn.execute(
+            "SELECT id, ai_entities FROM articles WHERE ai_entities IS NOT NULL AND ai_entities != ''"
+        ).fetchall()
+        n = 0
+        for r in rows:
+            ents = parse_entities(r["ai_entities"])
+            if ents:
+                materialize_entity_links(r["id"], ents, conn=_conn)
+                n += 1
+        log.info("entities: backfill materializou entidades de %d artigo(s).", n)
+        return n
+    except sqlite3.Error as exc:
+        log.error("entities: falha no backfill de entidades: %s", exc)
+        return 0
+    finally:
+        if should_close:
+            _conn.close()
+
+
+def list_entities(conn: sqlite3.Connection | None = None) -> list[dict]:
+    """Entidades com contagem de artigos, mais cobertas primeiro."""
+    _conn = conn if conn is not None else get_conn()
+    should_close = conn is None
+    try:
+        rows = _conn.execute(
+            """
+            SELECT e.id, e.name, e.entity_type, e.notes, COUNT(ae.article_id) AS article_count
+              FROM entities e
+              LEFT JOIN article_entities ae ON ae.entity_id = e.id
+             GROUP BY e.id
+             ORDER BY article_count DESC, e.name COLLATE NOCASE
+            """
+        ).fetchall()
+        return [dict(r) for r in rows]
+    except sqlite3.Error as exc:
+        log.error("entities: falha ao listar entidades: %s", exc)
+        return []
+    finally:
+        if should_close:
+            _conn.close()
+
+
+def get_entity_timeline(entity_id: int, conn: sqlite3.Connection | None = None) -> list[dict]:
+    """Artigos que mencionam a entidade, do mais novo ao mais antigo (linha do tempo)."""
+    _conn = conn if conn is not None else get_conn()
+    should_close = conn is None
+    try:
+        rows = _conn.execute(
+            """
+            SELECT a.id, a.title, a.published_at, a.ai_sentiment,
+                   COALESCE(f.title, f.url) AS feed
+              FROM article_entities ae
+              JOIN articles a ON a.id = ae.article_id
+              JOIN feeds f    ON f.id = a.feed_id
+             WHERE ae.entity_id = ?
+             ORDER BY a.published_at DESC, a.id DESC
+            """,
+            (entity_id,),
+        ).fetchall()
+        return [dict(r) for r in rows]
+    except sqlite3.Error as exc:
+        log.error("entities: falha na linha do tempo da entidade %d: %s", entity_id, exc)
+        return []
+    finally:
+        if should_close:
+            _conn.close()
+
+
+def get_entity_sentiment_breakdown(entity_id: int, conn: sqlite3.Connection | None = None) -> dict:
+    """Sentimento acumulado: contagem por classe (positivo/neutro/negativo)."""
+    _conn = conn if conn is not None else get_conn()
+    should_close = conn is None
+    try:
+        rows = _conn.execute(
+            """
+            SELECT a.ai_sentiment AS s, COUNT(*) AS n
+              FROM article_entities ae
+              JOIN articles a ON a.id = ae.article_id
+             WHERE ae.entity_id = ? AND a.ai_sentiment IS NOT NULL
+             GROUP BY a.ai_sentiment
+            """,
+            (entity_id,),
+        ).fetchall()
+        return {r["s"]: r["n"] for r in rows}
+    except sqlite3.Error as exc:
+        log.error("entities: falha no sentimento da entidade %d: %s", entity_id, exc)
+        return {}
+    finally:
+        if should_close:
+            _conn.close()
+
+
+def get_entity_feed_breakdown(entity_id: int, conn: sqlite3.Connection | None = None) -> list[dict]:
+    """Quais feeds cobriram mais a entidade (feed → contagem, desc)."""
+    _conn = conn if conn is not None else get_conn()
+    should_close = conn is None
+    try:
+        rows = _conn.execute(
+            """
+            SELECT COALESCE(f.title, f.url) AS feed, COUNT(*) AS n
+              FROM article_entities ae
+              JOIN articles a ON a.id = ae.article_id
+              JOIN feeds f    ON f.id = a.feed_id
+             WHERE ae.entity_id = ?
+             GROUP BY f.id
+             ORDER BY n DESC, feed COLLATE NOCASE
+            """,
+            (entity_id,),
+        ).fetchall()
+        return [dict(r) for r in rows]
+    except sqlite3.Error as exc:
+        log.error("entities: falha nos feeds da entidade %d: %s", entity_id, exc)
+        return []
+    finally:
+        if should_close:
+            _conn.close()
+
+
+def set_entity_notes(entity_id: int, notes: str, conn: sqlite3.Connection | None = None) -> bool:
+    """Persiste as notas da usuária para uma entidade. True em sucesso."""
+    _conn = conn if conn is not None else get_conn()
+    should_close = conn is None
+    try:
+        _conn.execute("UPDATE entities SET notes = ? WHERE id = ?", (notes, entity_id))
+        _conn.commit()
+        return True
+    except sqlite3.Error as exc:
+        log.error("entities: falha ao salvar notas da entidade %d: %s", entity_id, exc)
+        return False
+    finally:
+        if should_close:
+            _conn.close()

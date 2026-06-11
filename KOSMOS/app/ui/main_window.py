@@ -47,6 +47,7 @@ from app.core.scraper_worker import ScraperWorker
 from app.core.translation_worker import TranslationWorker
 from app.ui.views.analysis_tab import AnalysisTab
 from app.ui.views.article_list import ArticleList
+from app.ui.views.entity_view import EntityView
 from app.ui.views.feed_sidebar import ALL_FEEDS_ID, FeedSidebar
 from app.ui.views.reader_pane import ReaderPane
 from app.utils.config import KosmosConfig, save_config
@@ -95,9 +96,14 @@ class MainWindow(QMainWindow):
 
         # Navegação de topo: Leitura (3-painéis) | Análise (ferramentas de investigação).
         self._analysis_tab = AnalysisTab()
+        self._entity_view = EntityView()
+        self._analysis_tab.set_pane("entities", self._entity_view)
+        self._entity_view.article_selected.connect(self._open_article_from_analysis)
+
         tabs = QTabWidget()
-        tabs.addTab(splitter, "Leitura")
-        tabs.addTab(self._analysis_tab, "Análise")
+        self._reading_tab_index = tabs.addTab(splitter, "Leitura")
+        self._analysis_tab_index = tabs.addTab(self._analysis_tab, "Análise")
+        tabs.currentChanged.connect(self._on_tab_changed)
         self.setCentralWidget(tabs)
         self._tabs = tabs
 
@@ -163,6 +169,16 @@ class MainWindow(QMainWindow):
         self._sidebar.load_feeds()
         self._article_list.load_articles(ALL_FEEDS_ID)
         log.info("Carga inicial concluída.")
+
+    def _on_tab_changed(self, index: int) -> None:
+        """Ao abrir a aba Análise, recarrega a lista de entidades (cobre análises recentes)."""
+        if index == self._analysis_tab_index:
+            self._entity_view.load_entities()
+
+    def _open_article_from_analysis(self, article_id: int) -> None:
+        """Clique num artigo do rastreador → abre na aba de Leitura."""
+        self._tabs.setCurrentIndex(self._reading_tab_index)
+        self._reader.show_article(article_id)
 
     # ------------------------------------------------------------------
     # Slots

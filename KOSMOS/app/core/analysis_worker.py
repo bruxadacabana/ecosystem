@@ -32,6 +32,7 @@ from PySide6.QtCore import QThread, Signal
 
 from app.core import logos_client
 from app.core.database import get_conn
+from app.core.entities import materialize_entity_links
 from app.core.logos_client import LogosUnavailable
 
 log = logging.getLogger("kosmos.analysis_worker")
@@ -553,6 +554,7 @@ class AnalysisWorker(QThread):
                 return done
             if data is not None:
                 save_full_analysis(article_id, data)
+                materialize_entity_links(article_id, data["entidades"])
                 self.full_analysis_done.emit(article_id)
                 done += 1
         return done
