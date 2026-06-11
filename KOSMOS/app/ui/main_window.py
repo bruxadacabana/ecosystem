@@ -37,6 +37,7 @@ from PySide6.QtWidgets import (
     QMainWindow,
     QSplitter,
     QStatusBar,
+    QTabWidget,
     QWidget,
 )
 
@@ -44,6 +45,7 @@ from app.core.analysis_worker import AnalysisWorker
 from app.core.fetch_worker import FetchWorker
 from app.core.scraper_worker import ScraperWorker
 from app.core.translation_worker import TranslationWorker
+from app.ui.views.analysis_tab import AnalysisTab
 from app.ui.views.article_list import ArticleList
 from app.ui.views.feed_sidebar import ALL_FEEDS_ID, FeedSidebar
 from app.ui.views.reader_pane import ReaderPane
@@ -89,9 +91,15 @@ class MainWindow(QMainWindow):
         splitter.setStretchFactor(0, 0)   # sidebar: não estica
         splitter.setStretchFactor(1, 1)   # lista: estica um pouco
         splitter.setStretchFactor(2, 3)   # leitor: estica mais
-
-        self.setCentralWidget(splitter)
         self._splitter = splitter
+
+        # Navegação de topo: Leitura (3-painéis) | Análise (ferramentas de investigação).
+        self._analysis_tab = AnalysisTab()
+        tabs = QTabWidget()
+        tabs.addTab(splitter, "Leitura")
+        tabs.addTab(self._analysis_tab, "Análise")
+        self.setCentralWidget(tabs)
+        self._tabs = tabs
 
         bar = QStatusBar()
         self.setStatusBar(bar)

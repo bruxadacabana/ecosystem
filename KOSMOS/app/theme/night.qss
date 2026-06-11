@@ -319,6 +319,16 @@ QTabBar::tab:hover:!selected {
     background-color: #332B1E;
 }
 
+/* ── Aba Análise (ferramentas de investigação) ───────────────────────── */
+QListWidget#analysis_rail {
+    background-color: #231D14;
+    border-right: 1px solid #3D3226;
+}
+QLabel#analysis_placeholder {
+    color: #7A6E58;
+    font-size: 14px;
+}
+
 /* ── Cards de artigos (ArticleList) ──────────────────────────────────── */
 QFrame#article_card {
     background-color: transparent;
