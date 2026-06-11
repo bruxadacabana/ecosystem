@@ -37,3 +37,7 @@ def setup_logger(log_path: Path) -> None:
     # Suprimir ruído de bibliotecas
     for noisy in ("urllib3", "PIL", "filelock", "trafilatura", "charset_normalizer"):
         logging.getLogger(noisy).setLevel(logging.WARNING)
+
+    # Registra onde o log está sendo gravado — confirma (no próprio log) se foi para
+    # o sync_root (lido pelo Monitor do HUB) ou para o fallback local.
+    logging.getLogger("kosmos").info("Logger configurado — arquivo: %s", log_path)

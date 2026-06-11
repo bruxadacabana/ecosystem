@@ -98,6 +98,7 @@ Qual teste cobre o caso agora, ou por que não existe um.
 | [BUG-035](#bug-035) | FIXED | 2026-06-05 | Mnemosyne | `_ec_hdrs` usado em 6 chamadas ChatOpenAI mas NUNCA importado → `NameError` quebrava TODA a camada de LLM do Mnemosyne (reflexões, chat, studio, deep research). Causa real (junto com BUG-034) da memória pessoal vazia. Faltava `get_inference_headers as _ec_hdrs` no import |
 | [BUG-036](#bug-036) | FIXED | 2026-06-05 | HUB/LOGOS | `effective_gpu_layers` com orçamento chumbado (90%) + KV cache ~3x inflado → achava que 3B+7B não cabiam na GPU e jogava o 7B do Mnemosyne na CPU (RAM do sistema) → RAM esgotava, kernel matava o 7B, watchdog reiniciava → espiral que TRAVAVA o PC. Fix: orçamento = `vram_limit_pct` configurado + KV realista + rede de segurança (descarregar o outro LLM e usar GPU, nunca CPU para chat) |
 | [BUG-037](#bug-037) | FIXED | 2026-06-05 | HUB/LOGOS | Com AKASHA+Mnemosyne juntos, um modelo crasha (pressão de RAM dos apps), o watchdog reinicia, mas a VRAM do modelo MORTO ainda não foi reclamada → cai na CPU (rede de segurança do BUG-036 não disparou: o handle do outro estava morto, não "ativo") → 6,7 GB de RAM → OOM-killer derruba o ecossistema. Fix: a rede de segurança ESPERA a VRAM liberar (retry ~9s) em vez de cair na CPU — nunca CPU para chat, exceto último recurso |
+| [BUG-038](#bug-038) | FIXED | 2026-06-11 | KOSMOS (app/utils/paths.py) | logs do KOSMOS não aparecem na aba Monitor do HUB — gravados em caminho local, fora de `{sync_root}/kosmos/kosmos.log` que o HUB lê |
 
 ---
 
@@ -2070,3 +2071,39 @@ A rede de segurança em `ensure_server_loaded` passou a, quando um modelo de cha
 
 #### Teste de regressão
 `cargo check` limpo; testes de `effective_gpu_layers`/`estimate_kv` do BUG-036 continuam passando. Validação do loop de espera é de integração (depende de VRAM mudando no tempo) — fica para observação na máquina: sob crash, o log deve mostrar "aguardando VRAM liberar" e então "carregará na GPU", sem cair em CPU. **Pendente (app-level):** a pressão de RAM dos apps (backfill da AKASHA + indexação do Mnemosyne juntos) é o gatilho do crash inicial — ver item no TODO.
+
+---
+
+### BUG-038 · [FIXED] · Logs do KOSMOS não aparecem na aba Monitor do HUB (caminho do arquivo divergente)
+
+#### Identificação
+- **Data:** 2026-06-11
+- **App(s):** KOSMOS (e HUB, como leitor)
+- **Componente:** `KOSMOS/app/utils/paths.py` (`LOG_PATH`) · `KOSMOS/app/utils/logger.py` · contraparte: `HUB/src-tauri/src/commands/config.rs` (`read_app_log`)
+- **Commit do fix:** pendente
+- **Descoberta via:** uso-real (usuária pediu para verificar se os logs do KOSMOS chegam ao Monitor)
+- **Tempo de diagnóstico:** ~15 min
+
+#### Ambiente
+- **Máquina(s) afetadas:** todas
+- **OS:** independente de plataforma
+- **Modo:** produção (KOSMOS + HUB rodando)
+- **Reproduzível em:** qualquer ambiente com sync_root configurado
+
+#### Pré-condição para reproduzir
+Abrir o HUB → aba Monitor com o KOSMOS rodando.
+
+#### Sintoma observado
+O Monitor mostra "sem logs" para o KOSMOS (enquanto AKASHA e Mnemosyne exibem logs normalmente). A usuária quer que o KOSMOS gere logs de todo o funcionamento e que apareçam no Monitor.
+
+#### Causa raiz
+Descasamento entre onde o KOSMOS escrevia o log e onde o HUB o lê. O HUB (`read_app_log`) procura `{sync_root}/{app}/{app}.log` — para o KOSMOS, `{sync_root}/kosmos/kosmos.log`. Mas o `paths.py` do KOSMOS definia `LOG_PATH = LOCAL_DATA_DIR/logs/kosmos.log` (`{LOCALAPPDATA|XDG}/kosmos/logs/kosmos.log`), local e fora do sync_root. O KOSMOS já chamava `setup_logger` no startup e o HUB já tinha `useKosmosLogs → readAppLog('kosmos')`; só o caminho divergia. O Mnemosyne já seguia a convenção correta (`{sync_root}/mnemosyne/mnemosyne.log` com fallback local).
+
+#### Impacto
+Degradação de observabilidade: impossível acompanhar o KOSMOS pelo Monitor do HUB. Não bloqueia o app.
+
+#### Fix aplicado
+`paths._resolve_log_path()` passa a resolver `{sync_root}/kosmos/kosmos.log` via `ecosystem_client.get_sync_root()` (criando o diretório), com fallback para `LOG_DIR/kosmos.log` quando o sync_root está ausente ou inacessível (espelha o Mnemosyne). `logger.setup_logger` agora registra no próprio log o caminho escolhido (`"Logger configurado — arquivo: …"`), para confirmar destino (sync_root vs local). `LOG_PATH` passou a chamar `_resolve_log_path()`.
+
+#### Teste de regressão
+`KOSMOS/tests/test_log_path.py` (5): sync_root configurado → `{sync_root}/kosmos/kosmos.log` (+ diretório criado); casa com a convenção do HUB; sync_root None → fallback local; `get_sync_root` lança → fallback local; nome do arquivo = `kosmos.log`. Suíte KOSMOS: 359 ok.

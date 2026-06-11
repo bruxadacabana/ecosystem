@@ -28,8 +28,33 @@ def _local_data_dir() -> Path:
 
 LOCAL_DATA_DIR: Path = _local_data_dir()
 DB_PATH:        Path = LOCAL_DATA_DIR / "kosmos.db"
-LOG_DIR:        Path = LOCAL_DATA_DIR / "logs"
-LOG_PATH:       Path = LOG_DIR / "kosmos.log"
+LOG_DIR:        Path = LOCAL_DATA_DIR / "logs"   # fallback local (sem sync_root)
+
+
+def _resolve_log_path() -> Path:
+    """Resolve o caminho do log preferindo `{sync_root}/kosmos/kosmos.log`.
+
+    O HUB lê o log de cada app em `{sync_root}/{app}/{app}.log` (comando
+    `read_app_log`) para exibir na aba Monitor — mesma convenção do Mnemosyne.
+    Escrever nesse caminho é o que faz os logs do KOSMOS aparecerem no Monitor.
+    Sem `sync_root` acessível, cai no diretório local (`LOG_DIR`).
+    """
+    try:
+        import ecosystem_client  # disponível via sys.path configurado acima
+        root = ecosystem_client.get_sync_root()
+        if root is not None:
+            d = Path(root) / "kosmos"
+            d.mkdir(parents=True, exist_ok=True)
+            return d / "kosmos.log"
+    except Exception:
+        # Bootstrap: isto roda antes do logger existir, então não há como logar.
+        # sync_root indisponível/inacessível → usa o caminho local (intencional).
+        pass
+    LOG_DIR.mkdir(parents=True, exist_ok=True)
+    return LOG_DIR / "kosmos.log"
+
+
+LOG_PATH:       Path = _resolve_log_path()
 CACHE_DIR:      Path = LOCAL_DATA_DIR / "cache"
 FAVICON_DIR:    Path = CACHE_DIR / "favicons"
 IMAGE_DIR:      Path = CACHE_DIR / "images"

@@ -6858,7 +6858,7 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
 - [ ] **Testes: highlights** — criar/ler/exportar; stats — cálculos de leitura, distribuição de sentimento.
 
 #### Fase Extra — Fixes
-- [ ] **Logs do KOSMOS não chegam à aba Monitor do HUB — descasamento de caminho do arquivo de log** *(verificado 2026-06-08; não corrigido por ora a pedido da usuária)*
+- [x] **Logs do KOSMOS não chegam à aba Monitor do HUB — descasamento de caminho do arquivo de log** *(verificado 2026-06-08; CORRIGIDO 2026-06-11 — BUG-038)* — `paths._resolve_log_path()` agora resolve `{sync_root}/kosmos/kosmos.log` via `ecosystem_client.get_sync_root()` (convenção lida pelo HUB `read_app_log`), com fallback local `LOG_DIR/kosmos.log`; `logger.setup_logger` registra o caminho escolhido no próprio log. 5 testes em `test_log_path.py`; suíte KOSMOS 359 ok.
   - **Sintoma:** a aba Monitor do HUB mostra "sem logs" para o KOSMOS (enquanto AKASHA e Mnemosyne aparecem). A usuária pediu que o KOSMOS gere logs de todo o funcionamento e que eles sejam transmitidos para a aba Monitor.
   - **Causa raiz:** descasamento entre onde o KOSMOS escreve o log e onde o HUB o lê.
     - HUB lê: `read_app_log("kosmos")` em `HUB/src-tauri/src/commands/config.rs` (~linha 155) procura **`{sync_root}/kosmos/kosmos.log`** (padrão fixo `{sync_root}/{app}/{app}.log`; fallback `{sync_root}/{app}.bak/{app}.log`).
