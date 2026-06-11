@@ -394,6 +394,21 @@ QFrame#reader_sep {
     max-height: 1px;
 }
 
+/* Seção de análise AI (Fase 4) */
+QLabel#reader_analysis_header {
+    color: #A08860;
+    font-size: 12px;
+    font-weight: bold;
+}
+QLabel#reader_analysis {
+    color: #B8A882;
+    font-size: 12px;
+    background-color: #231D14;
+    border: 1px solid #3D3226;
+    border-radius: 4px;
+    padding: 8px 10px;
+}
+
 /* ── Sidebar header ───────────────────────────────────────────────────── */
 QLabel#sidebar_header {
     background-color: #231D14;

@@ -22,8 +22,10 @@ Conexões de sinais:
   TranslationWorker.title_translated → ArticleList.on_title_translated (P3, tradução de títulos)
   ReaderPane.translate_requested → TranslationWorker.request_article_translation (P2)
   TranslationWorker.article_translated → ReaderPane.on_article_translated
-  AnalysisWorker.quick_analysis_done → ArticleList.on_quick_analysis_done (P3, Call A → cards)
+  AnalysisWorker.quick_analysis_done → ArticleList.on_quick_analysis_done + ReaderPane.on_quick_analysis_done (Call A)
+  AnalysisWorker.full_analysis_done  → ReaderPane.on_full_analysis_done (P1, Call B → leitor)
   AnalysisWorker.analysis_failed     → ArticleList.on_analysis_failed
+  ReaderPane.analysis_requested      → AnalysisWorker.request_full_analysis (P1, ao abrir artigo)
 """
 from __future__ import annotations
 
@@ -139,10 +141,13 @@ class MainWindow(QMainWindow):
         self._translator.start()
         log.info("TranslationWorker iniciado.")
 
-        # AnalysisWorker (Call A em P3 → cards; Call B em P1 ao abrir, na Fase 4 item 4).
+        # AnalysisWorker: Call A em P3 → cards; Call B em P1 ao abrir um artigo → leitor.
         self._analysis = AnalysisWorker(self)
         self._analysis.quick_analysis_done.connect(self._article_list.on_quick_analysis_done)
+        self._analysis.quick_analysis_done.connect(self._reader.on_quick_analysis_done)
+        self._analysis.full_analysis_done.connect(self._reader.on_full_analysis_done)
         self._analysis.analysis_failed.connect(self._article_list.on_analysis_failed)
+        self._reader.analysis_requested.connect(self._analysis.request_full_analysis)
         self._analysis.start()
         log.info("AnalysisWorker iniciado.")
 

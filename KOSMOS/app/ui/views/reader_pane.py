@@ -19,9 +19,11 @@ sinal para recarregar a sidebar.
 """
 from __future__ import annotations
 
+import json
 import logging
 import sqlite3
 from datetime import datetime, timezone
+from html import escape
 
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
@@ -37,6 +39,90 @@ from PySide6.QtWidgets import (
 from app.core.database import get_conn
 
 log = logging.getLogger("kosmos.reader_pane")
+
+_FIVE_WS_LABELS = (("quem", "Quem"), ("o_que", "O quê"), ("quando", "Quando"),
+                   ("onde", "Onde"), ("por_que", "Por quê"))
+
+
+def _parse_analysis(data: dict) -> dict:
+    """Extrai e parseia os campos de análise AI de um dict de artigo (row ou fetch).
+
+    Campos JSON (tags, cinco Ws, entidades, viés) são decodificados com fallback seguro;
+    valores de tipo inesperado viram o default vazio.
+    """
+    def _jload(key: str, default):
+        raw = data.get(key)
+        if not raw:
+            return default
+        try:
+            val = json.loads(raw)
+        except (ValueError, TypeError):
+            return default
+        return val if isinstance(val, type(default)) else default
+
+    return {
+        "summary": (data.get("ai_summary") or "").strip(),
+        "sentiment": (data.get("ai_sentiment") or "").strip(),
+        "clickbait": data.get("ai_clickbait_score"),
+        "tags": _jload("ai_tags", []),
+        "five_ws": _jload("ai_five_ws", {}),
+        "entities": _jload("ai_entities", []),
+        "bias": _jload("ai_bias", {}),
+    }
+
+
+def _analysis_html(ai: dict) -> str:
+    """Monta o HTML da seção de análise a partir do que já existe (progressivo).
+
+    Campos rápidos (Call A: resumo, sentimento, clickbait, tags) e ricos (Call B:
+    cinco Ws, entidades, viés) aparecem conforme chegam; o que falta é omitido.
+    """
+    parts: list[str] = []
+    if ai.get("summary"):
+        parts.append(f"<p><b>Resumo:</b> {escape(ai['summary'])}</p>")
+
+    line = []
+    if ai.get("sentiment"):
+        line.append(f"Sentimento: {escape(ai['sentiment'])}")
+    if ai.get("clickbait") is not None:
+        try:
+            line.append(f"Clickbait: {float(ai['clickbait']):.0%}")
+        except (TypeError, ValueError):
+            pass
+    if line:
+        parts.append(f"<p>{' · '.join(line)}</p>")
+
+    tags = [escape(str(t)) for t in (ai.get("tags") or []) if str(t).strip()]
+    if tags:
+        parts.append(f"<p><b>Tags:</b> {', '.join(tags)}</p>")
+
+    five = ai.get("five_ws") or {}
+    rows = [f"<b>{lbl}:</b> {escape(str(five[k]))}" for k, lbl in _FIVE_WS_LABELS if five.get(k)]
+    if rows:
+        parts.append("<p>" + "<br>".join(rows) + "</p>")
+
+    ents = []
+    for e in (ai.get("entities") or []):
+        if isinstance(e, dict) and str(e.get("nome", "")).strip():
+            nome = escape(str(e["nome"]))
+            tipo = str(e.get("tipo", "")).strip()
+            ents.append(f"{nome} ({escape(tipo)})" if tipo else nome)
+    if ents:
+        parts.append(f"<p><b>Entidades:</b> {', '.join(ents)}</p>")
+
+    bias = ai.get("bias") or {}
+    bline = []
+    if bias.get("espectro"):
+        bline.append(f"espectro {escape(str(bias['espectro']))}")
+    if bias.get("qualidade_apuracao"):
+        bline.append(f"apuração {escape(str(bias['qualidade_apuracao']))}")
+    if bline:
+        parts.append(f"<p><b>Viés:</b> {', '.join(bline)}</p>")
+    marc = [escape(str(m)) for m in (bias.get("marcadores") or []) if str(m).strip()]
+    if marc:
+        parts.append(f"<p><b>Marcadores:</b> {', '.join(marc)}</p>")
+
+    return "".join(parts)
 
 
 def _fmt_date_full(iso: str | None) -> str:
@@ -61,6 +147,7 @@ class ReaderPane(QWidget):
     article_read = Signal(int)  # article_id — emitido após marcar como lido
     scrape_requested = Signal(int, str)  # (article_id, url) — pedido P1 de texto completo
     translate_requested = Signal(int)    # article_id — pedido P2 de tradução do corpo
+    analysis_requested = Signal(int)     # article_id — pedido P1 de análise completa (Call B)
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -118,6 +205,18 @@ class ReaderPane(QWidget):
         self._layout.addWidget(sep)
         self._layout.addSpacing(16)
         self._sep = sep
+
+        # Seção de análise AI (Fase 4) — preenchida progressivamente (Call A → Call B).
+        self._analysis_header = QLabel("Análise")
+        self._analysis_header.setObjectName("reader_analysis_header")
+        self._layout.addWidget(self._analysis_header)
+        self._analysis_lbl = QLabel()
+        self._analysis_lbl.setObjectName("reader_analysis")
+        self._analysis_lbl.setTextFormat(Qt.TextFormat.RichText)
+        self._analysis_lbl.setWordWrap(True)
+        self._analysis_lbl.setAlignment(Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignLeft)
+        self._layout.addWidget(self._analysis_lbl)
+        self._layout.addSpacing(16)
 
         self._body_lbl = QLabel()
         self._body_lbl.setObjectName("reader_body")
@@ -181,6 +280,8 @@ class ReaderPane(QWidget):
                        a.article_type, a.estimated_reading_min,
                        a.language_detected, a.content_excerpt, a.is_read,
                        a.url, a.content_text, a.content_text_translated, a.is_scraped,
+                       a.ai_summary, a.ai_sentiment, a.ai_clickbait_score, a.ai_tags,
+                       a.ai_five_ws, a.ai_entities, a.ai_bias,
                        COALESCE(f.title, f.url) AS feed_title,
                        f.site_url
                   FROM articles a
@@ -214,6 +315,10 @@ class ReaderPane(QWidget):
         if was_unread:
             log.info("Artigo %d marcado como lido.", article_id)
             self.article_read.emit(article_id)
+
+        # Dispara a análise completa P1 (Call B) — o worker pula se já estiver feita.
+        log.info("Solicitando análise completa (P1) do artigo %d.", article_id)
+        self.analysis_requested.emit(article_id)
 
         return True
 
@@ -264,6 +369,7 @@ class ReaderPane(QWidget):
             is_scraped=int(data.get("is_scraped") or 0),
         )
         self._refresh_translation_ui()
+        self._render_analysis(_parse_analysis(data))
 
         log.debug("Artigo renderizado: id=%d título='%s'", data["id"], data.get("title", ""))
 
@@ -401,6 +507,55 @@ class ReaderPane(QWidget):
             self._translate_btn.setText("Traduzir")
             self._translate_btn.setEnabled(True)
 
+    # ------------------------------------------------------------------
+    # Análise AI (Call A rápida + Call B rica, progressiva)
+    # ------------------------------------------------------------------
+
+    def _render_analysis(self, ai: dict) -> None:
+        """Atualiza a seção de análise com o que já existe; oculta-a se nada houver."""
+        html = _analysis_html(ai)
+        visible = bool(html)
+        self._analysis_lbl.setText(html)
+        self._analysis_header.setVisible(visible)
+        self._analysis_lbl.setVisible(visible)
+
+    def _fetch_analysis(
+        self, article_id: int, conn: sqlite3.Connection | None = None
+    ) -> dict | None:
+        """Lê e parseia os campos de análise do artigo no banco. None se ausente."""
+        _conn = conn if conn is not None else get_conn()
+        should_close = conn is None
+        try:
+            row = _conn.execute(
+                "SELECT ai_summary, ai_sentiment, ai_clickbait_score, ai_tags, "
+                "ai_five_ws, ai_entities, ai_bias FROM articles WHERE id = ?",
+                (article_id,),
+            ).fetchone()
+        except sqlite3.Error as exc:
+            log.error("Falha ao ler análise do artigo %d: %s", article_id, exc)
+            return None
+        finally:
+            if should_close:
+                _conn.close()
+        return _parse_analysis(dict(row)) if row is not None else None
+
+    def _refresh_analysis_if_current(
+        self, article_id: int, conn: sqlite3.Connection | None = None
+    ) -> None:
+        if article_id != self._current_article_id:
+            return
+        ai = self._fetch_analysis(article_id, conn)
+        if ai is not None:
+            self._render_analysis(ai)
+
+    def on_quick_analysis_done(self, article_id: int, conn: sqlite3.Connection | None = None) -> None:
+        """Slot: Call A concluída — atualiza a análise se for o artigo aberto."""
+        self._refresh_analysis_if_current(article_id, conn)
+
+    def on_full_analysis_done(self, article_id: int, conn: sqlite3.Connection | None = None) -> None:
+        """Slot: Call B concluída — adiciona os campos ricos se for o artigo aberto."""
+        self._refresh_analysis_if_current(article_id, conn)
+
     def _mark_as_read(
         self,
         article_id: int,
@@ -431,6 +586,8 @@ class ReaderPane(QWidget):
             self._title_lbl,
             self._meta_lbl,
             self._sep,
+            self._analysis_header,
+            self._analysis_lbl,
             self._body_lbl,
             self._fulltext_btn,
             self._fulltext_status,
