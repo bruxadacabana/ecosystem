@@ -1,0 +1,180 @@
+"""
+Testes de app/ui/views/article_list.py — visuais de análise nos cards (Fase 4, item 3).
+
+Cobre:
+  - _analysis_from_data: parse de ai_tags JSON; None/inválido → [].
+  - ArticleCard: renderiza borda por sentimento (property), chips e ícone de clickbait;
+    visual neutro sem análise; ícone só acima do limiar; chips limitados; apply ao vivo.
+  - ArticleList: load_articles traz campos de AI; on_quick_analysis_done atualiza o card;
+    id inexistente e on_analysis_failed não quebram; _card_for.
+"""
+from __future__ import annotations
+
+import itertools
+import sqlite3
+from pathlib import Path
+from unittest.mock import patch
+
+import app.utils.paths  # noqa: F401 — configura sys.path
+import pytest
+from PySide6.QtWidgets import QLabel
+
+from app.ui.views import article_list as al
+from app.ui.views.article_list import ArticleCard, ArticleList, _analysis_from_data
+from app.ui.views.feed_sidebar import ALL_FEEDS_ID
+
+_counter = itertools.count()
+
+
+def _open_db(path: Path) -> sqlite3.Connection:
+    conn = sqlite3.connect(str(path))
+    conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA foreign_keys = ON")
+    return conn
+
+
+def _init_db_at(path: Path) -> None:
+    import app.core.database as db_module
+    with patch.object(db_module, "DB_PATH", path):
+        db_module.init_db()
+
+
+def _insert(conn, fid, *, title="T", ai_sentiment=None, ai_clickbait_score=None, ai_tags=None) -> int:
+    cur = conn.execute(
+        "INSERT INTO articles (feed_id, url, title, published_at, ai_sentiment, "
+        "ai_clickbait_score, ai_tags) VALUES (?,?,?,?,?,?,?)",
+        (fid, f"https://j.com/a{next(_counter)}", title, "2026-06-01T00:00:00Z",
+         ai_sentiment, ai_clickbait_score, ai_tags),
+    )
+    conn.commit()
+    return cur.lastrowid
+
+
+@pytest.fixture
+def db(tmp_path):
+    db_file = tmp_path / "kosmos_test.db"
+    _init_db_at(db_file)
+    conn = _open_db(db_file)
+    cur = conn.execute("INSERT INTO feeds (url, title) VALUES (?, ?)", ("https://j.com/rss", "J"))
+    conn.commit()
+    yield conn, cur.lastrowid, db_file
+    conn.close()
+
+
+def _chips(card) -> list[str]:
+    return [w.text() for w in card.findChildren(QLabel) if w.objectName() == "tag_chip"]
+
+
+def _clickbait_icon(card):
+    return card.findChild(QLabel, "clickbait_icon")
+
+
+# ---------------------------------------------------------------------------
+# _analysis_from_data
+# ---------------------------------------------------------------------------
+
+class TestAnalysisFromData:
+    def test_parses_tags_json(self):
+        s, c, tags = _analysis_from_data({"ai_sentiment": "positivo", "ai_clickbait_score": 0.3,
+                                          "ai_tags": '["a", "b"]'})
+        assert s == "positivo" and c == 0.3 and tags == ["a", "b"]
+
+    def test_invalid_tags_empty(self):
+        assert _analysis_from_data({"ai_tags": "não json"})[2] == []
+
+    def test_missing_all(self):
+        assert _analysis_from_data({}) == (None, None, [])
+
+
+# ---------------------------------------------------------------------------
+# ArticleCard
+# ---------------------------------------------------------------------------
+
+class TestArticleCard:
+    def test_neutral_without_analysis(self, qapp):
+        card = ArticleCard({"id": 1, "title": "X"})
+        assert card.property("sentiment") in (None, "")
+        assert card._analysis_widget.isHidden() is True
+
+    def test_renders_sentiment_border_and_chips(self, qapp):
+        card = ArticleCard({"id": 1, "title": "X", "ai_sentiment": "negativo",
+                            "ai_clickbait_score": 0.1, "ai_tags": '["ia", "python"]'})
+        assert card.property("sentiment") == "negativo"
+        assert _chips(card) == ["ia", "python"]
+        assert _clickbait_icon(card) is None   # clickbait baixo → sem ícone
+
+    def test_clickbait_icon_above_threshold(self, qapp):
+        card = ArticleCard({"id": 1, "title": "X", "ai_sentiment": "neutro",
+                            "ai_clickbait_score": 0.9, "ai_tags": None})
+        assert _clickbait_icon(card) is not None
+
+    def test_chips_capped(self, qapp):
+        card = ArticleCard({"id": 1, "title": "X",
+                            "ai_tags": '["a","b","c","d","e","f"]'})
+        assert len(_chips(card)) == 4   # _MAX_CHIPS
+
+    def test_apply_quick_analysis_live(self, qapp):
+        card = ArticleCard({"id": 1, "title": "X"})   # começa neutro
+        card.apply_quick_analysis("positivo", 0.8, ["tag"])
+        assert card.property("sentiment") == "positivo"
+        assert _chips(card) == ["tag"]
+        assert _clickbait_icon(card) is not None
+        assert card._analysis_widget.isHidden() is False
+
+    def test_invalid_sentiment_clears_property(self, qapp):
+        card = ArticleCard({"id": 1, "title": "X"})
+        card.apply_quick_analysis("raivoso", None, [])
+        assert card.property("sentiment") == ""
+
+
+# ---------------------------------------------------------------------------
+# ArticleList
+# ---------------------------------------------------------------------------
+
+class TestArticleList:
+    def test_load_brings_analysis_fields(self, qapp, db):
+        conn, fid, _ = db
+        aid = _insert(conn, fid, title="Card", ai_sentiment="positivo",
+                      ai_clickbait_score=0.2, ai_tags='["x"]')
+        lst = ArticleList()
+        lst.load_articles(ALL_FEEDS_ID, conn=conn)
+        card = lst._card_for(aid)
+        assert card is not None
+        assert card.property("sentiment") == "positivo"
+        assert _chips(card) == ["x"]
+
+    def test_on_quick_analysis_done_updates_card(self, qapp, db):
+        conn, fid, _ = db
+        aid = _insert(conn, fid, title="Pendente")   # sem análise ainda
+        lst = ArticleList()
+        lst.load_articles(ALL_FEEDS_ID, conn=conn)
+        assert lst._card_for(aid).property("sentiment") in (None, "")
+        # análise chega e é persistida
+        conn.execute("UPDATE articles SET ai_sentiment='negativo', ai_clickbait_score=0.9, "
+                     "ai_tags='[\"alerta\"]' WHERE id=?", (aid,))
+        conn.commit()
+        lst.on_quick_analysis_done(aid, conn=conn)
+        card = lst._card_for(aid)
+        assert card.property("sentiment") == "negativo"
+        assert _chips(card) == ["alerta"]
+        assert _clickbait_icon(card) is not None
+
+    def test_on_quick_analysis_done_unknown_id_no_crash(self, qapp, db):
+        conn, _, _ = db
+        lst = ArticleList()
+        lst.load_articles(ALL_FEEDS_ID, conn=conn)
+        lst.on_quick_analysis_done(99999, conn=conn)   # não deve levantar
+
+    def test_on_analysis_failed_no_crash(self, qapp, db):
+        conn, fid, _ = db
+        aid = _insert(conn, fid)
+        lst = ArticleList()
+        lst.load_articles(ALL_FEEDS_ID, conn=conn)
+        lst.on_analysis_failed(aid)   # apenas loga; card segue neutro
+        assert lst._card_for(aid).property("sentiment") in (None, "")
+
+    def test_card_for_returns_none_when_absent(self, qapp, db):
+        conn, _, _ = db
+        lst = ArticleList()
+        lst.load_articles(ALL_FEEDS_ID, conn=conn)
+        assert lst._card_for(12345) is None

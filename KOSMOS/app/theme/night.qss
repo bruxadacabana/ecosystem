@@ -336,6 +336,31 @@ QLabel#card_meta {
     font-size: 11px;
 }
 
+/* Borda esquerda por sentimento (Fase 4 — análise AI) */
+QFrame#article_card[sentiment="positivo"] {
+    border-left: 3px solid #6E8B5A;   /* verde sálvia */
+}
+QFrame#article_card[sentiment="neutro"] {
+    border-left: 3px solid #4A4035;   /* cinza neutro */
+}
+QFrame#article_card[sentiment="negativo"] {
+    border-left: 3px solid #B5793F;   /* laranja âmbar */
+}
+
+/* Chips de tags e ícone de alerta de clickbait */
+QLabel#tag_chip {
+    background-color: #2A2218;
+    color: #B8A882;
+    border: 1px solid #3D3226;
+    border-radius: 7px;
+    padding: 1px 6px;
+    font-size: 10px;
+}
+QLabel#clickbait_icon {
+    color: #B5793F;
+    font-size: 12px;
+}
+
 QLabel#placeholder {
     color: #4A4035;
     font-size: 13px;

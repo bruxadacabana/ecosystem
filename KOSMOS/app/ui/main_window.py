@@ -22,6 +22,8 @@ Conexões de sinais:
   TranslationWorker.title_translated → ArticleList.on_title_translated (P3, tradução de títulos)
   ReaderPane.translate_requested → TranslationWorker.request_article_translation (P2)
   TranslationWorker.article_translated → ReaderPane.on_article_translated
+  AnalysisWorker.quick_analysis_done → ArticleList.on_quick_analysis_done (P3, Call A → cards)
+  AnalysisWorker.analysis_failed     → ArticleList.on_analysis_failed
 """
 from __future__ import annotations
 
@@ -36,6 +38,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from app.core.analysis_worker import AnalysisWorker
 from app.core.fetch_worker import FetchWorker
 from app.core.scraper_worker import ScraperWorker
 from app.core.translation_worker import TranslationWorker
@@ -136,6 +139,13 @@ class MainWindow(QMainWindow):
         self._translator.start()
         log.info("TranslationWorker iniciado.")
 
+        # AnalysisWorker (Call A em P3 → cards; Call B em P1 ao abrir, na Fase 4 item 4).
+        self._analysis = AnalysisWorker(self)
+        self._analysis.quick_analysis_done.connect(self._article_list.on_quick_analysis_done)
+        self._analysis.analysis_failed.connect(self._article_list.on_analysis_failed)
+        self._analysis.start()
+        log.info("AnalysisWorker iniciado.")
+
     def _initial_load(self) -> None:
         self._sidebar.load_feeds()
         self._article_list.load_articles(ALL_FEEDS_ID)
@@ -180,6 +190,9 @@ class MainWindow(QMainWindow):
         if self._translator.isRunning():
             self._translator.stop()
             self._translator.wait(3000)
+        if self._analysis.isRunning():
+            self._analysis.stop()
+            self._analysis.wait(3000)
         try:
             save_config(self.config)
         except OSError as exc:

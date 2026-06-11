@@ -15,6 +15,7 @@ FetchWorker emite feed_done, on_feed_updated decide se recarga ou não.
 """
 from __future__ import annotations
 
+import json
 import logging
 import sqlite3
 from datetime import datetime, timezone
@@ -22,6 +23,7 @@ from datetime import datetime, timezone
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
     QFrame,
+    QHBoxLayout,
     QLabel,
     QListWidget,
     QListWidgetItem,
@@ -35,6 +37,43 @@ from app.ui.views.feed_sidebar import ALL_FEEDS_ID
 log = logging.getLogger("kosmos.article_list")
 
 _MAX_ARTICLES = 200
+_CLICKBAIT_ALERT = 0.6   # acima disto, o card mostra o ícone de alerta
+_MAX_CHIPS = 4           # nº máximo de chips de tag exibidos por card
+_SENTIMENTS = ("positivo", "neutro", "negativo")
+
+
+def _analysis_from_data(data: dict) -> tuple[str | None, float | None, list]:
+    """Extrai (sentimento, clickbait, tags) de um dict de artigo. tags = lista (JSON parseado)."""
+    tags: list = []
+    raw = data.get("ai_tags")
+    if raw:
+        try:
+            parsed = json.loads(raw)
+            if isinstance(parsed, list):
+                tags = parsed
+        except (ValueError, TypeError):
+            tags = []
+    return data.get("ai_sentiment"), data.get("ai_clickbait_score"), tags
+
+
+def _fetch_card_analysis(
+    article_id: int, conn: sqlite3.Connection | None = None
+) -> tuple[str | None, float | None, list] | None:
+    """Lê os campos de Call A de um artigo para atualizar o card ao vivo. None se ausente."""
+    _conn = conn if conn is not None else get_conn()
+    should_close = conn is None
+    try:
+        row = _conn.execute(
+            "SELECT ai_sentiment, ai_clickbait_score, ai_tags FROM articles WHERE id = ?",
+            (article_id,),
+        ).fetchone()
+    except sqlite3.Error as exc:
+        log.error("Falha ao ler análise do artigo %d para o card: %s", article_id, exc)
+        return None
+    finally:
+        if should_close:
+            _conn.close()
+    return _analysis_from_data(dict(row)) if row is not None else None
 
 
 def _fmt_date(iso: str | None) -> str:
@@ -99,6 +138,20 @@ class ArticleCard(QFrame):
         meta_lbl.setObjectName("card_meta")
         layout.addWidget(meta_lbl)
 
+        # Linha de análise (Fase 4): ícone de clickbait + chips de tags. Vazia até a
+        # Call A chegar — artigos na fila ficam com visual neutro.
+        self._analysis_widget = QWidget()
+        self._analysis_layout = QHBoxLayout(self._analysis_widget)
+        self._analysis_layout.setContentsMargins(0, 2, 0, 0)
+        self._analysis_layout.setSpacing(4)
+        layout.addWidget(self._analysis_widget)
+        self._analysis_widget.hide()
+
+        # Se o artigo já foi pré-analisado (carregado do banco), renderiza de imediato.
+        sentiment, clickbait, tags = _analysis_from_data(data)
+        if sentiment or clickbait is not None or tags:
+            self._render_analysis(sentiment, clickbait, tags)
+
     @property
     def article_id(self) -> int:
         return self._article_id
@@ -107,6 +160,43 @@ class ArticleCard(QFrame):
         """Atualiza o texto do título (usado ao receber a tradução ao vivo)."""
         if text:
             self._title_lbl.setText(text)
+
+    def apply_quick_analysis(self, sentiment: str | None, clickbait: float | None, tags: list) -> None:
+        """Atualiza o card com o resultado da Call A (sinal quick_analysis_done)."""
+        self._render_analysis(sentiment, clickbait, tags)
+
+    def _clear_analysis_row(self) -> None:
+        while self._analysis_layout.count():
+            item = self._analysis_layout.takeAt(0)
+            w = item.widget()
+            if w is not None:
+                w.deleteLater()
+
+    def _render_analysis(self, sentiment: str | None, clickbait: float | None, tags: list) -> None:
+        # Borda esquerda por sentimento (verde/cinza/laranja via property no QSS).
+        self.setProperty("sentiment", sentiment if sentiment in _SENTIMENTS else "")
+        self.style().unpolish(self)
+        self.style().polish(self)
+
+        # Reconstrói a linha: ícone de clickbait (se alto) + chips de tags.
+        self._clear_analysis_row()
+        has_content = False
+        if clickbait is not None and clickbait >= _CLICKBAIT_ALERT:
+            icon = QLabel("⚠")  # ⚠
+            icon.setObjectName("clickbait_icon")
+            icon.setToolTip(f"Clickbait alto ({clickbait:.0%})")
+            self._analysis_layout.addWidget(icon)
+            has_content = True
+        for tag in (tags or [])[:_MAX_CHIPS]:
+            text = str(tag).strip()
+            if not text:
+                continue
+            chip = QLabel(text)
+            chip.setObjectName("tag_chip")
+            self._analysis_layout.addWidget(chip)
+            has_content = True
+        self._analysis_layout.addStretch(1)
+        self._analysis_widget.setVisible(has_content)
 
 
 class ArticleList(QWidget):
@@ -165,6 +255,7 @@ class ArticleList(QWidget):
                     """
                     SELECT a.id, a.title, a.title_translated, a.published_at, a.article_type,
                            a.estimated_reading_min, a.is_read,
+                           a.ai_sentiment, a.ai_clickbait_score, a.ai_tags,
                            COALESCE(f.title, f.url) AS feed_title
                       FROM articles a
                       JOIN feeds f ON f.id = a.feed_id
@@ -178,6 +269,7 @@ class ArticleList(QWidget):
                     """
                     SELECT a.id, a.title, a.title_translated, a.published_at, a.article_type,
                            a.estimated_reading_min, a.is_read,
+                           a.ai_sentiment, a.ai_clickbait_score, a.ai_tags,
                            COALESCE(f.title, f.url) AS feed_title
                       FROM articles a
                       JOIN feeds f ON f.id = a.feed_id
@@ -207,15 +299,34 @@ class ArticleList(QWidget):
             log.debug("Feed %d atualizado (%d novos) — recarregando lista.", feed_id, new_count)
             self.load_articles(self._current_feed_id)
 
-    def on_title_translated(self, article_id: int, translated_title: str) -> None:
-        """Slot: TranslationWorker traduziu um título — atualiza o card ao vivo."""
+    def _card_for(self, article_id: int) -> "ArticleCard | None":
+        """Localiza o card de um artigo na lista por id. None se não estiver visível."""
         for i in range(self._list.count()):
             item = self._list.item(i)
             if item.data(Qt.ItemDataRole.UserRole) == article_id:
-                card = self._list.itemWidget(item)
-                if card is not None:
-                    card.set_title(translated_title)
-                break
+                return self._list.itemWidget(item)
+        return None
+
+    def on_title_translated(self, article_id: int, translated_title: str) -> None:
+        """Slot: TranslationWorker traduziu um título — atualiza o card ao vivo."""
+        card = self._card_for(article_id)
+        if card is not None:
+            card.set_title(translated_title)
+
+    def on_quick_analysis_done(
+        self, article_id: int, conn: sqlite3.Connection | None = None
+    ) -> None:
+        """Slot: AnalysisWorker concluiu a Call A — atualiza o card (borda, chips, alerta)."""
+        card = self._card_for(article_id)
+        if card is None:
+            return
+        analysis = _fetch_card_analysis(article_id, conn)
+        if analysis is not None:
+            card.apply_quick_analysis(*analysis)
+
+    def on_analysis_failed(self, article_id: int) -> None:
+        """Slot: Call A falhou (JSON inválido) — o card permanece neutro."""
+        log.debug("Análise rápida falhou para artigo id=%d — card permanece neutro.", article_id)
 
     def article_count(self) -> int:
         """Retorna o número de itens atualmente na lista."""
