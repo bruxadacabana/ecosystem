@@ -228,10 +228,9 @@ Leitor e analisador de feeds RSS/Atom para jornalistas, estudantes e ativistas.
 - Detecção de idioma, tipo de artigo (notícia/opinião/análise) e tempo estimado de leitura
 - Banco SQLite sincronizado via Syncthing (`sync_root/kosmos/`) com FTS5 e triggers automáticos
 - Rastreamento de leitura (is_read, read_at)
+- Análise AI via LOGOS em duas etapas (`logos_client.py` + `AnalysisWorker`): pré-análise rápida em background **P3** (tags, sentimento, clickbait, idioma, resumo) com os **cards atualizando ao vivo** (borda colorida por sentimento, ícone de alerta de clickbait, chips de tags); e análise rica em **P1** ao abrir o artigo (cinco Ws, entidades, viés político) exibida numa seção "Análise" no leitor, preenchida progressivamente. Saída por prompt-e-parseia (JSON tolerante), claim atômico entre máquinas, schema versioning e TTL de 6 meses para 5W/entidades
 
 **Funcionalidades planejadas (fases futuras):**
-- ScraperWorker QThread (P1 ao abrir artigo, P2 em batch)
-- Análise AI: tags, sentimento, clickbait, cinco Ws, entidades, viés político (via LOGOS)
 - Arquivamento como `.md` em `sync_root/kosmos/Web/`
 - Ferramentas de investigação: rastreamento de entidades, pastas de investigação, mapa de cobertura
 - Highlights e anotações; tradução offline (argostranslate)
