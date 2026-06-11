@@ -1015,14 +1015,21 @@ KOSMOS/
     │   ├── database.py          → Schema SQLite (feeds, articles, entities, highlights…) + FTS5
     │   ├── feed_fetcher.py      → RSS/Atom: parse + throttle + persistência
     │   ├── fetch_worker.py      → QThread P2: busca todos os feeds em background
-    │   └── article_scraper.py  → Extração de texto completo (trafilatura + fallback BS4, throttle por domínio)
+    │   ├── article_scraper.py  → Extração de texto completo (trafilatura + fallback BS4, throttle por domínio)
+    │   ├── scraper_worker.py   → QThread P1 (artigo aberto) / P2 (batch): orquestra o scraping
+    │   ├── logos_client.py     → Wrapper de análise sobre o LOGOS (request_llm, X-App/X-Priority)
+    │   ├── analysis_worker.py  → QThread: Call A rápida (P3, cards) + Call B rica (P1, ao abrir); prompt-e-parseia
+    │   ├── translator.py       → Tradução: argostranslate offline (padrão) ou LOGOS
+    │   ├── translation_worker.py → QThread P3: traduz títulos dos cards; fila P2 para corpo sob demanda
+    │   ├── archiver.py         → Gera `.md` em sync_root/kosmos/Web/ (frontmatter, análise, ABNT, dual-language)
+    │   └── interests.py        → Alimenta o shared_topic_profile com temas da análise + tags manuais
     ├── ui/
-    │   ├── main_window.py       → Janela principal com layout 3-painéis
+    │   ├── main_window.py       → Janela principal com layout 3-painéis; instancia/conecta os workers
     │   ├── splash_screen.py     → Tela de carregamento
     │   └── views/
     │       ├── feed_sidebar.py  → Sidebar de feeds por categoria com contadores
-    │       ├── article_list.py  → Lista de cards de artigos
-    │       └── reader_pane.py   → Painel de leitura com metadados e texto
+    │       ├── article_list.py  → Lista de cards; visuais de análise ao vivo (borda/sentimento, clickbait, chips)
+    │       └── reader_pane.py   → Painel de leitura: metadados, texto, tradução e seção de análise progressiva
     ├── theme/                   → QSS (night.qss, day.qss) e fontes
     └── utils/
         ├── config.py            → KosmosConfig + integração ecosystem_client
@@ -1030,11 +1037,14 @@ KOSMOS/
         └── paths.py             → Caminhos Windows/Linux sem separadores hardcoded
 ```
 
-**Estado das fases (2026-06-01):**
+**Estado das fases (2026-06-11):**
 - Fase 1 (base silenciosa): ✅ schema, config, paths, logger
 - Fase 2 (leitor funcional): ✅ feed_fetcher, FetchWorker, layout 3-painéis
-- Fase 3 (scraping): 🔄 article_scraper.py implementado — ScraperWorker pendente
-- Fases 4–8: pendentes
+- Fase 3 (scraping): ✅ article_scraper + ScraperWorker (P1 ao abrir / P2 batch)
+- Fase 4 (análise AI e cards vivos): ✅ logos_client, AnalysisWorker (Call A P3 + Call B P1), cards ao vivo, leitor progressivo
+- Fase 5 (arquivamento): ✅ archiver (.md, ABNT, dual-language), interests (shared_topic_profile)
+- Fase 6 (tradução): ✅ translator (argos/LOGOS), TranslationWorker (títulos P3), tradução sob demanda (P2)
+- Fases 7–8 (ferramentas de investigação, highlights/stats): pendentes
 
 ---
 
@@ -1604,7 +1614,7 @@ Arquivo: `KOSMOS/pyproject.toml`
 | `trafilatura` | Extração de texto completo de artigos (método principal em `article_scraper.py`) |
 | `beautifulsoup4` | Fallback de extração HTML quando trafilatura retorna resultado insuficiente |
 | `requests` | HTTP síncrono para fetch de feeds e scraping de artigos |
-| `argostranslate` | Tradução offline de artigos (Fase 6 — pendente) |
+| `argostranslate` | Tradução offline de títulos e artigos (`translator.py`); par de idiomas instalado sob demanda na 1ª tradução |
 | `matplotlib` | Gráficos e visualizações (Fase 8 — pendente) |
 | `filelock` | Mutex para `ecosystem.json` |
 | `Pillow` | Processamento de imagens |

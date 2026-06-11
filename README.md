@@ -71,7 +71,7 @@ Inferência LLM: dois llama-servers paralelos — AKASHA :8081, Mnemosyne :8083 
 | **OGMA** | Electron + EditorJS | App desktop | 5175 (dev) | Editor de notas e documentos |
 | **AKASHA** | FastAPI + Python + SQLite | Servidor HTTP | 7071 | Buscador e indexador de pesquisa |
 | **Mnemosyne** | PySide6 + Python + ChromaDB | App desktop | — | Assistente RAG com notebooks |
-| **KOSMOS** | PyQt6 + Python | App desktop | — | Análise de imagens, OCR, visão |
+| **KOSMOS** | PySide6 + Python + SQLite | App desktop | — | Leitor e analisador de feeds RSS/Atom (análise AI, investigação) |
 | **Hermes** | Python + GUI | App desktop | — | Transcrição e processamento de áudio |
 
 ---
@@ -229,13 +229,14 @@ Leitor e analisador de feeds RSS/Atom para jornalistas, estudantes e ativistas.
 - Banco SQLite sincronizado via Syncthing (`sync_root/kosmos/`) com FTS5 e triggers automáticos
 - Rastreamento de leitura (is_read, read_at)
 - Análise AI via LOGOS em duas etapas (`logos_client.py` + `AnalysisWorker`): pré-análise rápida em background **P3** (tags, sentimento, clickbait, idioma, resumo) com os **cards atualizando ao vivo** (borda colorida por sentimento, ícone de alerta de clickbait, chips de tags); e análise rica em **P1** ao abrir o artigo (cinco Ws, entidades, viés político) exibida numa seção "Análise" no leitor, preenchida progressivamente. Saída por prompt-e-parseia (JSON tolerante), claim atômico entre máquinas, schema versioning e TTL de 6 meses para 5W/entidades
+- Arquivamento de artigos como `.md` em `sync_root/kosmos/Web/` (`archiver.py`): frontmatter completo, seção de análise marcada `kosmos_analysis: true` (Mnemosyne trata com peso distinto), referência ABNT e dual-language quando traduzido
+- Tradução (`translator.py`): argostranslate offline (padrão) ou LOGOS; títulos dos cards traduzidos em background **P3**; tradução de artigo sob demanda **P2** com alternância original/tradução; temas da análise alimentam o `shared_topic_profile` (`interests.py`)
 
 **Funcionalidades planejadas (fases futuras):**
-- Arquivamento como `.md` em `sync_root/kosmos/Web/`
-- Ferramentas de investigação: rastreamento de entidades, pastas de investigação, mapa de cobertura
-- Highlights e anotações; tradução offline (argostranslate)
+- Ferramentas de investigação: rastreamento de entidades, pastas de investigação, mapa de cobertura, comparação de enquadramento
+- Highlights e anotações; dashboard de estatísticas (leitura, distribuição de sentimento, bolha editorial)
 
-**Dependências chave:** `PySide6`, `feedparser`, `trafilatura`, `beautifulsoup4`, `requests`
+**Dependências chave:** `PySide6`, `feedparser`, `trafilatura`, `beautifulsoup4`, `requests`, `argostranslate`
 
 ---
 
