@@ -215,6 +215,67 @@ def get_entity_feed_breakdown(entity_id: int, conn: sqlite3.Connection | None = 
             _conn.close()
 
 
+def get_entity_coverage(
+    entity_id: int, days: int = 14, conn: sqlite3.Connection | None = None
+) -> dict:
+    """Mapa de cobertura feed×dia de uma entidade (para o mapa de cobertura).
+
+    Args:
+        entity_id: entidade alvo.
+        days:      tamanho da janela em dias (1–60), terminando hoje.
+        conn:      conexão existente (testes); None → cria e fecha própria.
+
+    Returns:
+        dict com:
+          - "days":   lista de datas "YYYY-MM-DD" do mais antigo ao mais recente (len=days);
+          - "feeds":  [{"id", "title"}] dos feeds **ativos** no período (≥1 artigo de qualquer
+                      assunto), ordenados por título — feeds ativos sem nenhuma menção aparecem
+                      com a linha toda zerada, tornando o silêncio editorial evidente;
+          - "counts": {(feed_id, "YYYY-MM-DD"): n} com as menções da entidade por feed/dia.
+    """
+    from datetime import date, timedelta
+
+    days = max(1, min(60, int(days)))
+    today = date.today()
+    day_list = [(today - timedelta(days=i)).isoformat() for i in range(days - 1, -1, -1)]
+    cutoff = day_list[0]
+
+    _conn = conn if conn is not None else get_conn()
+    should_close = conn is None
+    try:
+        feed_rows = _conn.execute(
+            """
+            SELECT DISTINCT a.feed_id AS id, COALESCE(f.title, f.url) AS title
+              FROM articles a
+              JOIN feeds f ON f.id = a.feed_id
+             WHERE substr(a.published_at, 1, 10) >= ?
+             ORDER BY title COLLATE NOCASE
+            """,
+            (cutoff,),
+        ).fetchall()
+        count_rows = _conn.execute(
+            """
+            SELECT a.feed_id AS fid, substr(a.published_at, 1, 10) AS day, COUNT(*) AS n
+              FROM article_entities ae
+              JOIN articles a ON a.id = ae.article_id
+             WHERE ae.entity_id = ?
+               AND substr(a.published_at, 1, 10) >= ?
+             GROUP BY a.feed_id, day
+            """,
+            (entity_id, cutoff),
+        ).fetchall()
+    except sqlite3.Error as exc:
+        log.error("entities: falha no mapa de cobertura da entidade %d: %s", entity_id, exc)
+        return {"days": day_list, "feeds": [], "counts": {}}
+    finally:
+        if should_close:
+            _conn.close()
+
+    feeds = [{"id": r["id"], "title": r["title"]} for r in feed_rows]
+    counts = {(r["fid"], r["day"]): r["n"] for r in count_rows}
+    return {"days": day_list, "feeds": feeds, "counts": counts}
+
+
 def set_entity_notes(entity_id: int, notes: str, conn: sqlite3.Connection | None = None) -> bool:
     """Persiste as notas da usuária para uma entidade. True em sucesso."""
     _conn = conn if conn is not None else get_conn()
