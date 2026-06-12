@@ -272,9 +272,10 @@ O diretório `sync_root` é sincronizado entre as máquinas via Syncthing. Os da
 | 5175 | OGMA — Electron dev | Apenas em modo de desenvolvimento |
 | 7071 | AKASHA — FastAPI | Sempre ativo quando o AKASHA está rodando |
 | 7072 | LOGOS — proxy LLM | HUB gerencia; fila P1/P2/P3 |
-| 8081 | llama-server AKASHA (interno) | Gerenciado pelo LOGOS — modelo llm_query; atende AKASHA, KOSMOS, HUB |
+| 8081 | llama-server AKASHA (interno) | Gerenciado pelo LOGOS — modelo llm_query; atende AKASHA, HUB |
 | 8082 | llama-server embed (interno) | Gerenciado pelo LOGOS — servidor de embeddings (`--embeddings --pooling mean`) |
 | 8083 | llama-server Mnemosyne (interno) | Gerenciado pelo LOGOS — modelo llm_rag; atende Mnemosyne (RAG, indexação, reflexões) |
+| 8084 | llama-server KOSMOS (interno) | Gerenciado pelo LOGOS — modelo llm_analysis; análise de artigos do KOSMOS; CPU-first (nunca descarrega AKASHA/Mnemosyne) |
 | 8384 | Syncthing (interface web) | Interface de administração do Syncthing |
 | 8965 | KOSMOS — HTTP interno | Comunicação interna entre KOSMOS e AKASHA |
 
@@ -476,13 +477,14 @@ O backend de inferência LLM do ecossistema. **Substitui o Ollama** — todo o c
 
 > 📖 Instruções completas de compilação e uso estão na Seção 8 e no `README.md`. Aqui está o resumo rápido para verificar se está funcional.
 
-**Topologia de três servidores (em implementação):**
-O LOGOS gerencia três instâncias separadas do llama-server:
-- **Servidor AKASHA** (`:8081`) — modelo `llm_query`; atende AKASHA, KOSMOS, HUB; responde `/v1/chat/completions`
+**Topologia de quatro servidores:**
+O LOGOS gerencia quatro instâncias separadas do llama-server:
+- **Servidor AKASHA** (`:8081`) — modelo `llm_query`; atende AKASHA, HUB; responde `/v1/chat/completions`
 - **Servidor de embedding** (`:8082`) — modelo de embedding (ex: `bge-m3`); flags `--embeddings --pooling mean`; responde `/v1/embeddings`
 - **Servidor Mnemosyne** (`:8083`) — modelo `llm_rag`; atende Mnemosyne (RAG, indexação, reflexões)
+- **Servidor KOSMOS** (`:8084`) — modelo `llm_analysis`; atende a análise de artigos do KOSMOS. Política **CPU-first, nunca evita**: carrega na GPU só se houver VRAM livre, senão roda em CPU — **nunca descarrega AKASHA/Mnemosyne**, que a usuária usa ativamente.
 
-O proxy LOGOS (`:7072`) roteia automaticamente: `/v1/embeddings` → 8082; `mnemosyne` → 8083; todo o resto → 8081.
+O proxy LOGOS (`:7072`) roteia automaticamente: `/v1/embeddings` → 8082; `mnemosyne` → 8083; `kosmos` → 8084; todo o resto → 8081.
 Cada servidor tem ciclo de vida, idle watchdog e crash watchdog independentes — falha num não afeta os outros.
 Configurar o modelo de embedding em `ecosystem.json` no campo `logos.embed_model` (ex: `"bge-m3-q4_k_m.gguf"`).
 
