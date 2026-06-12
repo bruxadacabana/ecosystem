@@ -276,6 +276,107 @@ def get_entity_coverage(
     return {"days": day_list, "feeds": feeds, "counts": counts}
 
 
+_SPECTRUM_ORDER = (
+    "esquerda", "centro-esquerda", "centro", "centro-direita", "direita", "indefinido",
+)
+
+
+def get_entity_framing(entity_id: int, conn: sqlite3.Connection | None = None) -> dict:
+    """Comparação de enquadramento de uma entidade por espectro político.
+
+    Agrupa os artigos que mencionam a entidade pelo `ai_bias.espectro` (esquerda →
+    direita; sem análise → 'indefinido') e, por espectro, calcula: contagem,
+    distribuição de sentimento, entidades co-citadas (top) e manchetes de amostra.
+    Permite ver lado a lado como fontes de inclinações diferentes enquadram o
+    mesmo assunto. (O agrupamento é por ENTIDADE — não há clustering de evento.)
+
+    Returns:
+        dict ordenado {espectro: {"count", "sentiment", "co_entities", "headlines"}},
+        apenas para espectros com ≥1 artigo.
+    """
+    _conn = conn if conn is not None else get_conn()
+    should_close = conn is None
+    try:
+        rows = _conn.execute(
+            """
+            SELECT a.id, a.title, a.published_at, a.ai_sentiment, a.ai_bias,
+                   COALESCE(f.title, f.url) AS feed
+              FROM article_entities ae
+              JOIN articles a ON a.id = ae.article_id
+              JOIN feeds f    ON f.id = a.feed_id
+             WHERE ae.entity_id = ?
+             ORDER BY a.published_at DESC, a.id DESC
+            """,
+            (entity_id,),
+        ).fetchall()
+        co_rows = _conn.execute(
+            """
+            SELECT ae.article_id AS aid, e2.name AS name
+              FROM article_entities ae
+              JOIN article_entities ae2 ON ae2.article_id = ae.article_id
+                                       AND ae2.entity_id != ae.entity_id
+              JOIN entities e2 ON e2.id = ae2.entity_id
+             WHERE ae.entity_id = ?
+            """,
+            (entity_id,),
+        ).fetchall()
+    except sqlite3.Error as exc:
+        log.error("entities: falha no enquadramento da entidade %d: %s", entity_id, exc)
+        return {}
+    finally:
+        if should_close:
+            _conn.close()
+
+    def _spectrum_of(ai_bias_raw: str | None) -> str:
+        if not ai_bias_raw:
+            return "indefinido"
+        try:
+            esp = (json.loads(ai_bias_raw) or {}).get("espectro") or ""
+        except (json.JSONDecodeError, TypeError):
+            esp = ""
+        esp = str(esp).strip().lower()
+        return esp if esp in _SPECTRUM_ORDER else "indefinido"
+
+    article_spectrum: dict[int, str] = {}
+    groups: dict[str, dict] = {}
+    for r in rows:
+        esp = _spectrum_of(r["ai_bias"])
+        article_spectrum[r["id"]] = esp
+        g = groups.setdefault(esp, {
+            "count": 0,
+            "sentiment": {"positivo": 0, "neutro": 0, "negativo": 0},
+            "co_entities": {},   # name → n (vira lista ordenada no fim)
+            "headlines": [],
+        })
+        g["count"] += 1
+        s = (r["ai_sentiment"] or "").strip().lower()
+        if s in g["sentiment"]:
+            g["sentiment"][s] += 1
+        if len(g["headlines"]) < 5:
+            g["headlines"].append({
+                "title": r["title"], "feed": r["feed"],
+                "published_at": r["published_at"], "ai_sentiment": r["ai_sentiment"],
+            })
+
+    # Entidades co-citadas, agregadas por espectro do artigo onde co-ocorreram.
+    for cr in co_rows:
+        esp = article_spectrum.get(cr["aid"])
+        if esp is None:
+            continue
+        co = groups[esp]["co_entities"]
+        co[cr["name"]] = co.get(cr["name"], 0) + 1
+
+    # Finaliza: co_entities → lista top-5 por contagem; ordena espectros canonicamente.
+    result: dict[str, dict] = {}
+    for esp in _SPECTRUM_ORDER:
+        if esp not in groups:
+            continue
+        g = groups[esp]
+        g["co_entities"] = sorted(g["co_entities"].items(), key=lambda kv: (-kv[1], kv[0]))[:5]
+        result[esp] = g
+    return result
+
+
 def set_entity_notes(entity_id: int, notes: str, conn: sqlite3.Connection | None = None) -> bool:
     """Persiste as notas da usuária para uma entidade. True em sucesso."""
     _conn = conn if conn is not None else get_conn()

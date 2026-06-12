@@ -53,6 +53,7 @@ from app.ui.views.article_list import ArticleList
 from app.ui.views.entity_view import EntityView
 from app.ui.views.investigation_view import InvestigationView
 from app.ui.views.coverage_map import CoverageMap
+from app.ui.views.framing_view import FramingView
 from app.ui.views.feed_sidebar import ALL_FEEDS_ID, FeedSidebar
 from app.ui.views.reader_pane import ReaderPane
 from app.utils.config import KosmosConfig, save_config
@@ -111,6 +112,9 @@ class MainWindow(QMainWindow):
 
         self._coverage_map = CoverageMap()
         self._analysis_tab.set_pane("coverage", self._coverage_map)
+
+        self._framing_view = FramingView()
+        self._analysis_tab.set_pane("framing", self._framing_view)
 
         tabs = QTabWidget()
         self._reading_tab_index = tabs.addTab(splitter, "Leitura")
@@ -191,6 +195,7 @@ class MainWindow(QMainWindow):
             self._entity_view.load_entities()
             self._investigation_view.load_investigations()
             self._coverage_map.reload()
+            self._framing_view.reload()
 
     def _open_article_from_analysis(self, article_id: int) -> None:
         """Clique num artigo de uma ferramenta de análise → abre na aba de Leitura."""
