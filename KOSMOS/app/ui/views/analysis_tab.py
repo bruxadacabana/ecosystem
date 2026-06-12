@@ -34,6 +34,7 @@ TOOLS: list[tuple[str, str]] = [
     ("investigations", "Investigações"),
     ("coverage", "Cobertura"),
     ("framing", "Enquadramento"),
+    ("alerts", "Alertas"),
     ("stats", "Estatísticas"),
 ]
 

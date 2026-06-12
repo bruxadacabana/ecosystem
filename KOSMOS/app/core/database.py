@@ -117,6 +117,15 @@ CREATE TABLE IF NOT EXISTS article_entities (
     PRIMARY KEY (article_id, entity_id)
 );
 
+-- Alertas: palavras-chave e entidades rastreadas que destacam cards (Fase 7)
+CREATE TABLE IF NOT EXISTS alerts (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    kind        TEXT    NOT NULL,   -- 'keyword' | 'entity'
+    term        TEXT    NOT NULL,   -- keyword (texto) | entity_id (como texto) para kind='entity'
+    created_at  TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+    UNIQUE (kind, term)
+);
+
 -- Trechos marcados pela usuária durante a leitura
 CREATE TABLE IF NOT EXISTS highlights (
     id              INTEGER PRIMARY KEY AUTOINCREMENT,

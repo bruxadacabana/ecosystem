@@ -108,9 +108,15 @@ class ArticleCard(QFrame):
         layout.setContentsMargins(12, 8, 12, 8)
         layout.setSpacing(3)
 
+        # Alerta: card destacado quando o artigo casa com keyword/entidade vigiada.
+        # Property "alerted" → estilo no QSS; sino 🔔 prefixado ao título como sinal claro.
+        self._alerted: bool = bool(data.get("alerted"))
+        self.setProperty("alerted", self._alerted)
+
         # Título — prefere a tradução (no idioma da usuária) quando disponível;
         # negrito se não-lido.
-        title_lbl = QLabel(data.get("title_translated") or data.get("title") or "(sem título)")
+        base_title = data.get("title_translated") or data.get("title") or "(sem título)"
+        title_lbl = QLabel(("🔔 " + base_title) if self._alerted else base_title)
         title_lbl.setWordWrap(True)
         title_lbl.setObjectName("card_title")
         if not data.get("is_read"):
@@ -253,6 +259,7 @@ class ArticleList(QWidget):
         _conn = conn if conn is not None else get_conn()
         should_close = conn is None
         rows = []
+        self._alerted_ids = set()
         try:
             if feed_id == ALL_FEEDS_ID:
                 rows = _conn.execute(
@@ -283,6 +290,10 @@ class ArticleList(QWidget):
                     """,
                     (feed_id, _MAX_ARTICLES),
                 ).fetchall()
+            # Alertas: conjunto de artigos que casam com keywords/entidades vigiadas.
+            # Calculado aqui (conexão aberta) para destacar os cards correspondentes.
+            from app.core.alerts import get_alerted_article_ids
+            self._alerted_ids = get_alerted_article_ids(_conn)
         except sqlite3.Error as exc:
             log.error("Falha ao carregar artigos (feed_id=%s): %s", feed_id, exc)
         finally:
@@ -350,8 +361,10 @@ class ArticleList(QWidget):
         self._placeholder.hide()
         self._list.show()
 
+        alerted = getattr(self, "_alerted_ids", set())
         for row in rows:
             data = dict(row)
+            data["alerted"] = data["id"] in alerted
             card = ArticleCard(data, self._list)
             item = QListWidgetItem(self._list)
             item.setData(Qt.ItemDataRole.UserRole, data["id"])

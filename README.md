@@ -231,9 +231,9 @@ Leitor e analisador de feeds RSS/Atom para jornalistas, estudantes e ativistas.
 - Análise AI via LOGOS em duas etapas (`logos_client.py` + `AnalysisWorker`): pré-análise rápida em background **P3** (tags, sentimento, clickbait, idioma, resumo) com os **cards atualizando ao vivo** (borda colorida por sentimento, ícone de alerta de clickbait, chips de tags); e análise rica em **P1** ao abrir o artigo (cinco Ws, entidades, viés político) exibida numa seção "Análise" no leitor, preenchida progressivamente. Saída por prompt-e-parseia (JSON tolerante), claim atômico entre máquinas, schema versioning e TTL de 6 meses para 5W/entidades
 - Arquivamento de artigos como `.md` em `sync_root/kosmos/Web/` (`archiver.py`): frontmatter completo, seção de análise marcada `kosmos_analysis: true` (Mnemosyne trata com peso distinto), referência ABNT e dual-language quando traduzido
 - Tradução (`translator.py`): argostranslate offline (padrão) ou LOGOS; títulos dos cards traduzidos em background **P3**; tradução de artigo sob demanda **P2** com alternância original/tradução; temas da análise alimentam o `shared_topic_profile` (`interests.py`)
+- Ferramentas de investigação (aba Análise): rastreamento de entidades, pastas de investigação com dossiê `.md`, mapa de cobertura (entidade × feed × dia), comparação de enquadramento (por espectro político) e **alertas** de palavras-chave/entidades — cards são destacados (🔔) na próxima abertura da lista quando casam com um termo vigiado
 
 **Funcionalidades planejadas (fases futuras):**
-- Ferramentas de investigação: rastreamento de entidades, pastas de investigação, mapa de cobertura, comparação de enquadramento
 - Highlights e anotações; dashboard de estatísticas (leitura, distribuição de sentimento, bolha editorial)
 
 **Dependências chave:** `PySide6`, `feedparser`, `trafilatura`, `beautifulsoup4`, `requests`, `argostranslate`

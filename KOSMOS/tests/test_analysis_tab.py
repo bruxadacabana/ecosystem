@@ -16,11 +16,11 @@ from app.ui.views.analysis_tab import TOOLS, AnalysisTab
 
 def test_rail_has_all_tools(qapp):
     tab = AnalysisTab()
-    assert tab._rail.count() == len(TOOLS) == 5
+    assert tab._rail.count() == len(TOOLS) == 6
     labels = [tab._rail.item(i).text() for i in range(tab._rail.count())]
-    assert labels == ["Entidades", "Investigações", "Cobertura", "Enquadramento", "Estatísticas"]
+    assert labels == ["Entidades", "Investigações", "Cobertura", "Enquadramento", "Alertas", "Estatísticas"]
     keys = [tab._rail.item(i).data(Qt.ItemDataRole.UserRole) for i in range(tab._rail.count())]
-    assert keys == ["entities", "investigations", "coverage", "framing", "stats"]
+    assert keys == ["entities", "investigations", "coverage", "framing", "alerts", "stats"]
 
 
 def test_stack_has_a_pane_per_tool(qapp):
@@ -78,7 +78,7 @@ def test_set_pane_unknown_key_noop(qapp):
 def test_show_tool_selects_rail(qapp):
     tab = AnalysisTab()
     tab.show_tool("stats")
-    assert tab._rail.currentRow() == 4
-    assert tab._stack.currentIndex() == 4
+    assert tab._rail.currentRow() == 5
+    assert tab._stack.currentIndex() == 5
     tab.show_tool("inexistente")             # no-op
-    assert tab._rail.currentRow() == 4
+    assert tab._rail.currentRow() == 5
