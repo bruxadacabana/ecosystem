@@ -61,6 +61,8 @@ pub(crate) const AKASHA_SERVER_PORT: u16    = 8081;
 pub(crate) const EMBED_SERVER_PORT: u16     = 8082;
 /// Porta do servidor llama-server dedicado à Mnemosyne (RAG, indexação, reflexões).
 pub(crate) const MNEMOSYNE_SERVER_PORT: u16 = 8083;
+/// Porta do servidor llama-server dedicado ao KOSMOS (análise de artigos — `llm_analysis`).
+pub(crate) const KOSMOS_SERVER_PORT: u16    = 8084;
 /// Timeout (s) para o llama-server responder ao primeiro /health após o spawn.
 const LLAMA_SERVER_READY_TIMEOUT_SECS: u64 = 90;
 /// Default de `embed_n_gpu_layers`: **0 = embeddings em CPU** (BUG-028).
@@ -81,14 +83,21 @@ pub(crate) enum ServerTarget {
     Akasha,
     /// Servidor Mnemosyne (porta 8083) — RAG, indexação, reflexões.
     Mnemosyne,
+    /// Servidor KOSMOS (porta 8084) — análise de artigos (`llm_analysis`).
+    /// Política CPU-first: nunca evita Akasha/Mnemosyne — usa GPU só se houver
+    /// VRAM livre, senão roda em CPU (modelo de análise é leve).
+    Kosmos,
 }
 
 /// Determina o servidor alvo com base no nome do app que fez a requisição.
-/// Retorna `Mnemosyne` se o nome contém "mnemosyne" (case-insensitive),
-/// `Akasha` para tudo o resto (akasha, hub, kosmos, desconhecido, etc.).
+/// Retorna `Mnemosyne` se o nome contém "mnemosyne"; `Kosmos` se contém "kosmos";
+/// `Akasha` para tudo o resto (akasha, hub, desconhecido, etc.).
 fn route_request(app_name: &str) -> ServerTarget {
-    if app_name.to_ascii_lowercase().contains("mnemosyne") {
+    let lower = app_name.to_ascii_lowercase();
+    if lower.contains("mnemosyne") {
         ServerTarget::Mnemosyne
+    } else if lower.contains("kosmos") {
+        ServerTarget::Kosmos
     } else {
         ServerTarget::Akasha
     }
@@ -401,6 +410,8 @@ struct Inner {
     akasha_semaphore: Arc<Semaphore>,
     /// Semáforo do servidor Mnemosyne — independente, mesma política de permits.
     mnemosyne_semaphore: Arc<Semaphore>,
+    /// Semáforo do servidor KOSMOS — independente, mesma política de permits.
+    kosmos_semaphore: Arc<Semaphore>,
     /// Semáforo EXCLUSIVO do embed-server (capacidade 1).
     /// O embed-server (llama-server na porta EMBED_SERVER_PORT) retorna HTTP 500
     /// quando recebe duas requisições simultâneas. AKASHA e Mnemosyne embedam em
@@ -449,6 +460,10 @@ struct Inner {
     mnemosyne_crash_count: Mutex<u32>,
     /// True quando o servidor Mnemosyne atingiu o limite de 3 crashes e foi desabilitado.
     mnemosyne_disabled: Arc<AtomicBool>,
+    /// Contador de crashes consecutivos do servidor KOSMOS.
+    kosmos_crash_count: Mutex<u32>,
+    /// True quando o servidor KOSMOS atingiu o limite de 3 crashes e foi desabilitado.
+    kosmos_disabled: Arc<AtomicBool>,
     /// Tauri AppHandle para emissão de eventos críticos ao frontend.
     /// Inicializado em start_server após o setup do Tauri.
     app_handle: Mutex<Option<tauri::AppHandle>>,
@@ -480,6 +495,8 @@ struct Inner {
     akasha_proc: Mutex<Option<LlamaProcHandle>>,
     /// Processo llama-server Mnemosyne (porta 8083). None = nenhum modelo carregado.
     mnemosyne_proc: Mutex<Option<LlamaProcHandle>>,
+    /// Processo llama-server KOSMOS (porta 8084). None = nenhum modelo carregado.
+    kosmos_proc: Mutex<Option<LlamaProcHandle>>,
 
     // ── Servidor de embedding (porta EMBED_SERVER_PORT) ──────────────────────
     /// Alias canônico do modelo de embedding (ex: "bge-m3").
@@ -506,6 +523,9 @@ struct Inner {
     /// Porta usada por `collect_status` para pings de health no servidor Mnemosyne.
     /// Em produção = MNEMOSYNE_SERVER_PORT (8083). Em testes usa porta livre para isolamento.
     mnemosyne_health_port: u16,
+    /// Porta usada por `collect_status` para pings de health no servidor KOSMOS.
+    /// Em produção = KOSMOS_SERVER_PORT (8084). Em testes usa porta livre para isolamento.
+    kosmos_health_port: u16,
 
     // ── Limites de recursos configuráveis ───────────────────────────────────
     /// Threshold de CPU (%) para bloquear tarefas P3. Padrão 85.
@@ -524,6 +544,8 @@ struct Inner {
     last_akasha_request_at: Mutex<std::time::Instant>,
     /// Timestamp da última requisição ao servidor Mnemosyne (llama-server:8083).
     last_mnemosyne_request_at: Mutex<std::time::Instant>,
+    /// Timestamp da última requisição ao servidor KOSMOS (llama-server:8084).
+    last_kosmos_request_at: Mutex<std::time::Instant>,
     /// Timestamp da última requisição ao servidor de embedding (llama-server:8082).
     last_embed_request_at: Mutex<std::time::Instant>,
     /// Segundos de ociosidade após os quais o servidor de chat é descarregado.
@@ -595,6 +617,18 @@ impl LogosState {
         }
     }
 
+    /// Para o processo llama-server KOSMOS (se houver). Retorna true se havia processo.
+    pub(crate) async fn kill_kosmos_proc(&self) -> bool {
+        let mut guard = self.0.kosmos_proc.lock().await;
+        if let Some(mut proc) = guard.take() {
+            let _ = proc.child.kill();
+            log::info!("LOGOS: processo KOSMOS parado");
+            true
+        } else {
+            false
+        }
+    }
+
     /// Retorna o diretório de modelos GGUF (para acesso externo ao módulo).
     pub fn models_dir(&self) -> &std::path::Path {
         &self.0.models_dir
@@ -652,6 +686,11 @@ impl LogosState {
     /// Retorna true se há um processo Mnemosyne rastreado ativamente.
     pub async fn mnemosyne_proc_active(&self) -> bool {
         self.0.mnemosyne_proc.lock().await.is_some()
+    }
+
+    /// Retorna true se há um processo KOSMOS rastreado ativamente.
+    pub async fn kosmos_proc_active(&self) -> bool {
+        self.0.kosmos_proc.lock().await.is_some()
     }
 
     /// Retorna o caminho do binário llama-server, se encontrado.
@@ -841,6 +880,7 @@ impl LogosState {
             llama_server_url: llama_server_url.into(),
             akasha_semaphore:    Arc::new(Semaphore::new(2)),
             mnemosyne_semaphore: Arc::new(Semaphore::new(2)),
+            kosmos_semaphore:    Arc::new(Semaphore::new(2)),
             embed_semaphore:     Arc::new(Semaphore::new(1)),
             active_priority: Mutex::new(None),
             active_model_class: Mutex::new(None),
@@ -870,10 +910,13 @@ impl LogosState {
             llama_server_bin,
             akasha_proc:    Mutex::new(None),
             mnemosyne_proc: Mutex::new(None),
+            kosmos_proc:    Mutex::new(None),
             akasha_crash_count:    Mutex::new(0),
             akasha_disabled:       Arc::new(AtomicBool::new(false)),
             mnemosyne_crash_count: Mutex::new(0),
             mnemosyne_disabled:    Arc::new(AtomicBool::new(false)),
+            kosmos_crash_count:    Mutex::new(0),
+            kosmos_disabled:       Arc::new(AtomicBool::new(false)),
             app_handle: Mutex::new(None),
             embed_model: Mutex::new(embed_model),
             embed_n_gpu_layers: Mutex::new(embed_n_gpu_layers),
@@ -882,11 +925,13 @@ impl LogosState {
             chat_health_port:      AKASHA_SERVER_PORT,
             embed_health_port:     EMBED_SERVER_PORT,
             mnemosyne_health_port: MNEMOSYNE_SERVER_PORT,
+            kosmos_health_port:    KOSMOS_SERVER_PORT,
             cpu_p3_limit_pct: Mutex::new(cpu_p3_limit_pct),
             cached_cpu_pct: Arc::new(AtomicU32::new(0)),
             inference_enabled:          Arc::new(AtomicBool::new(false)),
             last_akasha_request_at:     Mutex::new(std::time::Instant::now()),
             last_mnemosyne_request_at:  Mutex::new(std::time::Instant::now()),
+            last_kosmos_request_at:     Mutex::new(std::time::Instant::now()),
             last_embed_request_at:      Mutex::new(std::time::Instant::now()),
             idle_timeout_secs,
             cpu_fallback_max_mb,
@@ -921,6 +966,7 @@ impl LogosState {
             llama_server_url:    "http://127.0.0.1:8081".to_string(),
             akasha_semaphore:    Arc::new(Semaphore::new(2)),
             mnemosyne_semaphore: Arc::new(Semaphore::new(2)),
+            kosmos_semaphore:    Arc::new(Semaphore::new(2)),
             embed_semaphore:     Arc::new(Semaphore::new(1)),
             active_priority:    Mutex::new(None),
             active_model_class: Mutex::new(None),
@@ -947,10 +993,13 @@ impl LogosState {
             llama_server_bin,
             akasha_proc:           Mutex::new(None),
             mnemosyne_proc:        Mutex::new(None),
+            kosmos_proc:           Mutex::new(None),
             akasha_crash_count:    Mutex::new(0),
             akasha_disabled:       Arc::new(AtomicBool::new(false)),
             mnemosyne_crash_count: Mutex::new(0),
             mnemosyne_disabled:    Arc::new(AtomicBool::new(false)),
+            kosmos_crash_count:    Mutex::new(0),
+            kosmos_disabled:       Arc::new(AtomicBool::new(false)),
             app_handle:         Mutex::new(None),
             embed_model:        Mutex::new("bge-m3".to_string()),
             embed_n_gpu_layers: Mutex::new(DEFAULT_EMBED_N_GPU_LAYERS),
@@ -960,11 +1009,13 @@ impl LogosState {
             chat_health_port:      59981,
             embed_health_port:     59982,
             mnemosyne_health_port: 59983,
+            kosmos_health_port:    59984,
             cpu_p3_limit_pct:    Mutex::new(85.0),
             cached_cpu_pct:      Arc::new(AtomicU32::new(0)),
             inference_enabled:          Arc::new(AtomicBool::new(false)),
             last_akasha_request_at:     Mutex::new(std::time::Instant::now()),
             last_mnemosyne_request_at:  Mutex::new(std::time::Instant::now()),
+            last_kosmos_request_at:     Mutex::new(std::time::Instant::now()),
             last_embed_request_at:      Mutex::new(std::time::Instant::now()),
             idle_timeout_secs:  300,
             cpu_fallback_max_mb: 2048,
@@ -1051,6 +1102,12 @@ pub struct StatusResponse {
     pub chat_mnemosyne_online: bool,
     /// Latência do /health no servidor Mnemosyne (ms). None se offline.
     pub chat_mnemosyne_ms: Option<u32>,
+    /// Modelo carregado no servidor KOSMOS (porta 8084). Vazio se offline.
+    pub chat_kosmos_model: String,
+    /// True se o servidor KOSMOS está ativo.
+    pub chat_kosmos_online: bool,
+    /// Latência do /health no servidor KOSMOS (ms). None se offline.
+    pub chat_kosmos_ms: Option<u32>,
 }
 
 #[derive(Serialize, Clone)]
@@ -1899,14 +1956,15 @@ pub(crate) async fn ensure_server_loaded(
         .ok_or_else(|| "llama-server não encontrado".to_string())?
         .clone();
 
-    let port  = match target { ServerTarget::Akasha => AKASHA_SERVER_PORT, ServerTarget::Mnemosyne => MNEMOSYNE_SERVER_PORT };
-    let label = match target { ServerTarget::Akasha => "AKASHA",           ServerTarget::Mnemosyne => "Mnemosyne" };
+    let port  = match target { ServerTarget::Akasha => AKASHA_SERVER_PORT, ServerTarget::Mnemosyne => MNEMOSYNE_SERVER_PORT, ServerTarget::Kosmos => KOSMOS_SERVER_PORT };
+    let label = match target { ServerTarget::Akasha => "AKASHA",           ServerTarget::Mnemosyne => "Mnemosyne",          ServerTarget::Kosmos => "KOSMOS" };
 
     // Fast path: modelo correto já carregado neste servidor
     {
         let guard = match target {
             ServerTarget::Akasha    => s.0.akasha_proc.lock().await,
             ServerTarget::Mnemosyne => s.0.mnemosyne_proc.lock().await,
+            ServerTarget::Kosmos    => s.0.kosmos_proc.lock().await,
         };
         if guard.as_ref().map(|p| p.model_name.as_str()) == Some(model_name) {
             return Ok(());
@@ -1918,6 +1976,7 @@ pub(crate) async fn ensure_server_loaded(
         let mut guard = match target {
             ServerTarget::Akasha    => s.0.akasha_proc.lock().await,
             ServerTarget::Mnemosyne => s.0.mnemosyne_proc.lock().await,
+            ServerTarget::Kosmos    => s.0.kosmos_proc.lock().await,
         };
         if let Some(mut proc) = guard.take() {
             let prev = proc.model_name.clone();
@@ -1990,11 +2049,15 @@ pub(crate) async fn ensure_server_loaded(
     // a VRAM liberar antes de carregar na GPU. Só cair para CPU como último recurso
     // absoluto — NUNCA por VRAM transitoriamente ocupada. É isto que permite os dois
     // apps coexistirem na GPU sem estourar a RAM do sistema.
-    if n_gpu == 0 && profile_n_gpu != 0 {
+    // KOSMOS é CPU-first e NUNCA evita: pula toda a dança de eviction/espera.
+    // Se não couber na GPU (n_gpu==0), carrega direto em CPU — sem matar Akasha/Mnemosyne
+    // que a usuária está usando ativamente (caso de uso padrão: ambos já na VRAM).
+    if n_gpu == 0 && profile_n_gpu != 0 && target != ServerTarget::Kosmos {
         // (1) descarrega o outro LLM de chat se estiver vivo
         let (other_active, other_label) = match target {
             ServerTarget::Akasha    => (s.mnemosyne_proc_active().await, "Mnemosyne"),
             ServerTarget::Mnemosyne => (s.llama_proc_active().await,     "AKASHA"),
+            ServerTarget::Kosmos    => (false, ""), // inalcançável: filtrado acima
         };
         if other_active {
             log::warn!(
@@ -2004,6 +2067,7 @@ pub(crate) async fn ensure_server_loaded(
             match target {
                 ServerTarget::Akasha    => { s.kill_mnemosyne_proc().await; }
                 ServerTarget::Mnemosyne => { s.kill_akasha_proc().await; }
+                ServerTarget::Kosmos    => {} // inalcançável: filtrado acima
             }
             tokio::time::sleep(Duration::from_millis(600)).await;
             n_gpu = effective_gpu_layers(&s.0.client, s.0.hardware_profile, profile_n_gpu, model_size_mb, n_ctx, vram_limit_pct).await;
@@ -2075,8 +2139,8 @@ pub(crate) async fn ensure_server_loaded(
         let proc_exited = child.try_wait().ok().flatten().is_some();
         let _ = child.kill().await;
 
-        // CPU fallback: apenas para AKASHA (WorkPc não tem GPU)
-        if proc_exited && n_gpu != 0 && target == ServerTarget::Akasha {
+        // CPU fallback: AKASHA (WorkPc sem GPU) e KOSMOS (CPU-first — análise leve).
+        if proc_exited && n_gpu != 0 && (target == ServerTarget::Akasha || target == ServerTarget::Kosmos) {
             if let Some(gate_err) = check_cpu_fallback_allowed(&gguf_path, s.0.cpu_fallback_max_mb) {
                 let alert = format!("'{model_name}': OOM GPU — {gate_err}");
                 log::error!("LOGOS {label}: {alert}");
@@ -2106,10 +2170,12 @@ pub(crate) async fn ensure_server_loaded(
                 ));
             }
 
-            *s.0.akasha_proc.lock().await = Some(LlamaProcHandle {
-                child: cpu_child,
-                model_name: model_name.to_string(),
-            });
+            let handle = LlamaProcHandle { child: cpu_child, model_name: model_name.to_string() };
+            match target {
+                ServerTarget::Akasha => { *s.0.akasha_proc.lock().await = Some(handle); }
+                ServerTarget::Kosmos => { *s.0.kosmos_proc.lock().await = Some(handle); }
+                ServerTarget::Mnemosyne => { *s.0.mnemosyne_proc.lock().await = Some(handle); }
+            }
             log::warn!("LOGOS {label}: '{model_name}' carregado em modo CPU only (downgrade de GPU)");
             return Ok(());
         }
@@ -2131,6 +2197,13 @@ pub(crate) async fn ensure_server_loaded(
         }
         ServerTarget::Mnemosyne => {
             *s.0.mnemosyne_proc.lock().await = Some(LlamaProcHandle {
+                child,
+                model_name: model_name.to_string(),
+            });
+            log::info!("LOGOS {label}: '{model_name}' pronto na porta {port}");
+        }
+        ServerTarget::Kosmos => {
+            *s.0.kosmos_proc.lock().await = Some(LlamaProcHandle {
                 child,
                 model_name: model_name.to_string(),
             });
@@ -2469,6 +2542,29 @@ async fn check_idle_mnemosyne(s: &LogosState) -> bool {
     }
 }
 
+/// Idle watchdog para o servidor KOSMOS — mesmo comportamento, timer independente.
+async fn check_idle_kosmos(s: &LogosState) -> bool {
+    if !s.kosmos_proc_active().await {
+        return false;
+    }
+    let elapsed = s.0.last_kosmos_request_at.lock().await.elapsed().as_secs();
+    if elapsed > s.0.idle_timeout_secs {
+        log::info!(
+            "LOGOS idle watchdog (KOSMOS): sem requisições por {elapsed}s \
+             (limite: {}s) — descarregando modelo",
+            s.0.idle_timeout_secs
+        );
+        s.kill_kosmos_proc().await;
+        true
+    } else {
+        log::debug!(
+            "LOGOS idle watchdog (KOSMOS): ativo há {elapsed}s (limite: {}s) — mantendo",
+            s.0.idle_timeout_secs
+        );
+        false
+    }
+}
+
 /// Análogo para o embed server — mesmo comportamento, timer independente.
 async fn check_idle_embed(s: &LogosState) -> bool {
     if !s.embed_proc_active().await {
@@ -2566,6 +2662,7 @@ async fn queue_and_forward(
     let target_proc_active = match target {
         ServerTarget::Akasha    => s.llama_proc_active().await,
         ServerTarget::Mnemosyne => s.mnemosyne_proc_active().await,
+        ServerTarget::Kosmos    => s.kosmos_proc_active().await,
     };
     if !target_proc_active {
         let to_load = model_for_app(&s, &app_name).await;
@@ -2618,6 +2715,7 @@ async fn queue_and_forward(
     match target {
         ServerTarget::Akasha    => *s.0.last_akasha_request_at.lock().await    = std::time::Instant::now(),
         ServerTarget::Mnemosyne => *s.0.last_mnemosyne_request_at.lock().await = std::time::Instant::now(),
+        ServerTarget::Kosmos    => *s.0.last_kosmos_request_at.lock().await    = std::time::Instant::now(),
     }
 
     // Aplica override de prioridade baseado no perfil ativo
@@ -2799,6 +2897,7 @@ async fn queue_and_forward(
     let sem = match target {
         ServerTarget::Akasha    => s.0.akasha_semaphore.clone(),
         ServerTarget::Mnemosyne => s.0.mnemosyne_semaphore.clone(),
+        ServerTarget::Kosmos    => s.0.kosmos_semaphore.clone(),
     };
     let permit = match priority {
         1 => tokio::time::timeout(P1_TIMEOUT, sem.acquire_many_owned(permits))
@@ -2839,10 +2938,12 @@ async fn queue_and_forward(
     let target_disabled = match target {
         ServerTarget::Akasha    => s.0.akasha_disabled.load(Ordering::Relaxed),
         ServerTarget::Mnemosyne => s.0.mnemosyne_disabled.load(Ordering::Relaxed),
+        ServerTarget::Kosmos    => s.0.kosmos_disabled.load(Ordering::Relaxed),
     };
     let target_port = match target {
         ServerTarget::Akasha    => AKASHA_SERVER_PORT,
         ServerTarget::Mnemosyne => MNEMOSYNE_SERVER_PORT,
+        ServerTarget::Kosmos    => KOSMOS_SERVER_PORT,
     };
     let use_llama = s.0.llama_server_bin.is_some() && !target_disabled;
     let is_generate = ollama_target == "api/generate";
@@ -3187,6 +3288,7 @@ async fn proxy_openai_to_llama(s: &LogosState, headers: &HeaderMap, body: Bytes,
     let target_disabled = match target {
         ServerTarget::Akasha    => s.0.akasha_disabled.load(Ordering::Relaxed),
         ServerTarget::Mnemosyne => s.0.mnemosyne_disabled.load(Ordering::Relaxed),
+        ServerTarget::Kosmos    => s.0.kosmos_disabled.load(Ordering::Relaxed),
     };
     if target_disabled {
         return (
@@ -3288,6 +3390,7 @@ async fn proxy_openai_to_llama(s: &LogosState, headers: &HeaderMap, body: Bytes,
             let was_idle = match target {
                 ServerTarget::Akasha    => !s.llama_proc_active().await,
                 ServerTarget::Mnemosyne => !s.mnemosyne_proc_active().await,
+                ServerTarget::Kosmos    => !s.kosmos_proc_active().await,
             };
             if was_idle {
                 log::info!(
@@ -3326,6 +3429,7 @@ async fn proxy_openai_to_llama(s: &LogosState, headers: &HeaderMap, body: Bytes,
     match target {
         ServerTarget::Akasha    => *s.0.last_akasha_request_at.lock().await    = std::time::Instant::now(),
         ServerTarget::Mnemosyne => *s.0.last_mnemosyne_request_at.lock().await = std::time::Instant::now(),
+        ServerTarget::Kosmos    => *s.0.last_kosmos_request_at.lock().await    = std::time::Instant::now(),
     }
 
     let permits: u32 = if priority >= 3 { 1 } else { 2 };
@@ -3337,6 +3441,7 @@ async fn proxy_openai_to_llama(s: &LogosState, headers: &HeaderMap, body: Bytes,
     let sem = match target {
         ServerTarget::Akasha    => s.0.akasha_semaphore.clone(),
         ServerTarget::Mnemosyne => s.0.mnemosyne_semaphore.clone(),
+        ServerTarget::Kosmos    => s.0.kosmos_semaphore.clone(),
     };
     let _permit = match tokio::time::timeout(timeout, sem.acquire_many_owned(permits)).await {
         Ok(Ok(p)) => p,
@@ -3358,6 +3463,7 @@ async fn proxy_openai_to_llama(s: &LogosState, headers: &HeaderMap, body: Bytes,
     let target_port = match target {
         ServerTarget::Akasha    => AKASHA_SERVER_PORT,
         ServerTarget::Mnemosyne => MNEMOSYNE_SERVER_PORT,
+        ServerTarget::Kosmos    => KOSMOS_SERVER_PORT,
     };
     let url = format!("http://127.0.0.1:{target_port}/{endpoint}");
     let result = s.0.client
@@ -3758,22 +3864,31 @@ pub async fn collect_status(s: &LogosState) -> StatusResponse {
         let g = s.0.mnemosyne_proc.lock().await;
         g.as_ref().map(|p| p.model_name.clone()).unwrap_or_default()
     };
+    let kosmos_model_loaded = {
+        let g = s.0.kosmos_proc.lock().await;
+        g.as_ref().map(|p| p.model_name.clone()).unwrap_or_default()
+    };
     let embed_model_loaded = {
         let g = s.0.embed_proc.lock().await;
         g.as_ref().map(|p| p.model_name.clone()).unwrap_or_default()
     };
     let akasha_online    = !akasha_model.is_empty();
     let mnemosyne_online = !mnemosyne_model_loaded.is_empty();
+    let kosmos_online    = !kosmos_model_loaded.is_empty();
     let embed_online     = !embed_model_loaded.is_empty();
 
-    // Pings paralelos para os três servidores — só quando processo ativo.
-    let (akasha_ms, mnemosyne_ms, embed_ms) = tokio::join!(
+    // Pings paralelos para os quatro servidores — só quando processo ativo.
+    let (akasha_ms, mnemosyne_ms, kosmos_ms, embed_ms) = tokio::join!(
         async {
             if akasha_online    { ping_server_ms(&s.0.client, s.0.chat_health_port).await }
             else                { None }
         },
         async {
             if mnemosyne_online { ping_server_ms(&s.0.client, s.0.mnemosyne_health_port).await }
+            else                { None }
+        },
+        async {
+            if kosmos_online    { ping_server_ms(&s.0.client, s.0.kosmos_health_port).await }
             else                { None }
         },
         async {
@@ -3821,6 +3936,9 @@ pub async fn collect_status(s: &LogosState) -> StatusResponse {
         chat_mnemosyne_model:  mnemosyne_model_loaded,
         chat_mnemosyne_online: mnemosyne_online,
         chat_mnemosyne_ms:     mnemosyne_ms,
+        chat_kosmos_model:     kosmos_model_loaded,
+        chat_kosmos_online:    kosmos_online,
+        chat_kosmos_ms:        kosmos_ms,
     }
 }
 
@@ -3988,15 +4106,18 @@ async fn ensure_embed_server_started(s: &LogosState) {
 
 /// Envia keep_alive: 0 para descarregar todos os modelos carregados.
 /// Para o processo llama-server e o embed-server para liberar VRAM completamente.
-/// Retorna o número de processos parados (0, 1 ou 2).
+/// Retorna o número de processos parados (0 a 4: AKASHA, Mnemosyne, KOSMOS, embed).
 pub async fn do_silence(s: &LogosState) -> usize {
     let stopped_akasha    = s.kill_akasha_proc().await;
     let stopped_mnemosyne = s.kill_mnemosyne_proc().await;
+    let stopped_kosmos    = s.kill_kosmos_proc().await;
     let stopped_embed     = s.kill_embed_proc().await;
     if stopped_akasha    { log::info!("LOGOS silence: servidor AKASHA parado"); }
     if stopped_mnemosyne { log::info!("LOGOS silence: servidor Mnemosyne parado"); }
+    if stopped_kosmos    { log::info!("LOGOS silence: servidor KOSMOS parado"); }
     if stopped_embed     { log::info!("LOGOS silence: embed-server parado"); }
-    usize::from(stopped_akasha) + usize::from(stopped_mnemosyne) + usize::from(stopped_embed)
+    usize::from(stopped_akasha) + usize::from(stopped_mnemosyne)
+        + usize::from(stopped_kosmos) + usize::from(stopped_embed)
 }
 
 /// Retorna o modelo atualmente carregado no llama-server (se houver).
@@ -5189,6 +5310,97 @@ pub async fn start_server(state: LogosState, app_handle: tauri::AppHandle) {
         }
     });
 
+    // Crash watchdog do servidor KOSMOS — análogo aos de AKASHA/Mnemosyne, independente.
+    // Detecta saída inesperada, tenta restart com backoff (10s/30s/60s).
+    // Após 3 falhas: desabilita o servidor KOSMOS e emite alerta.
+    let kosmos_wdg = state.clone();
+    tokio::spawn(async move {
+        const BACKOFFS: [u64; 3] = [10, 30, 60];
+        loop {
+            tokio::time::sleep(Duration::from_secs(10)).await;
+
+            let crashed_model: Option<String> = {
+                let mut guard = kosmos_wdg.0.kosmos_proc.lock().await;
+                if let Some(ref mut proc) = guard.as_mut() {
+                    match proc.child.try_wait() {
+                        Ok(Some(status)) => {
+                            log::error!(
+                                "LOGOS watchdog (KOSMOS): servidor saiu inesperadamente \
+                                 (modelo='{}', status={:?})",
+                                proc.model_name, status
+                            );
+                            Some(proc.model_name.clone())
+                        }
+                        Ok(None)  => None,
+                        Err(e) => { log::warn!("LOGOS watchdog (KOSMOS): erro ao verificar: {e}"); None }
+                    }
+                } else { None }
+            };
+
+            let Some(model_name) = crashed_model else { continue };
+
+            *kosmos_wdg.0.kosmos_proc.lock().await = None;
+
+            kosmos_wdg.emit_alert(
+                "error",
+                &format!("KOSMOS server caiu inesperadamente (modelo '{model_name}')"),
+            ).await;
+            {
+                let guard = kosmos_wdg.0.app_handle.lock().await;
+                if let Some(ref handle) = *guard {
+                    let _ = handle.emit("logos-kosmos-crashed", serde_json::json!({ "model": model_name }));
+                }
+            }
+
+            let crash_count = {
+                let mut cc = kosmos_wdg.0.kosmos_crash_count.lock().await;
+                *cc += 1;
+                *cc
+            };
+
+            if crash_count > 3 {
+                log::error!(
+                    "LOGOS watchdog (KOSMOS): servidor falhou {} vezes — \
+                     desabilitado até reload manual",
+                    crash_count
+                );
+                kosmos_wdg.0.kosmos_disabled.store(true, Ordering::Relaxed);
+                kosmos_wdg.emit_alert(
+                    "error",
+                    "KOSMOS server falhou 3+ vezes consecutivas — \
+                     desabilitado. Reinicie o HUB para reativar.",
+                ).await;
+                {
+                    let guard = kosmos_wdg.0.app_handle.lock().await;
+                    if let Some(ref handle) = *guard {
+                        let _ = handle.emit("logos-kosmos-unavailable", ());
+                    }
+                }
+                loop { tokio::time::sleep(Duration::from_secs(3600)).await; }
+            }
+
+            let backoff = BACKOFFS[(crash_count as usize - 1).min(2)];
+            log::warn!(
+                "LOGOS watchdog (KOSMOS): tentativa {crash_count}/3 de restart de '{model_name}' em {backoff}s"
+            );
+            tokio::time::sleep(Duration::from_secs(backoff)).await;
+
+            if let Ok(()) = ensure_server_loaded(&kosmos_wdg, ServerTarget::Kosmos, &model_name).await {
+                *kosmos_wdg.0.kosmos_crash_count.lock().await = 0;
+                log::info!("LOGOS watchdog (KOSMOS): servidor reiniciado com sucesso — '{model_name}'");
+                kosmos_wdg.emit_alert(
+                    "warn",
+                    &format!("KOSMOS server reiniciado após crash — '{model_name}'"),
+                ).await;
+            } else {
+                log::error!(
+                    "LOGOS watchdog (KOSMOS): falha ao reiniciar servidor — '{model_name}' \
+                     (tentativa {crash_count}/3)"
+                );
+            }
+        }
+    });
+
     // Watchdog do embed-server — verifica a cada 10s.
     // Detecta crash e tenta 1 restart (sem backoff exponencial — embed é leve).
     // Se o restart também falhar, emite alerta e aguarda o próximo ciclo.
@@ -5354,6 +5566,15 @@ pub async fn start_server(state: LogosState, app_handle: tauri::AppHandle) {
         loop {
             tokio::time::sleep(Duration::from_secs(60)).await;
             check_idle_mnemosyne(&idle_mnemosyne_wdg).await;
+        }
+    });
+
+    // Idle unload watchdog — servidor KOSMOS. Timer independente dos outros.
+    let idle_kosmos_wdg = state.clone();
+    tokio::spawn(async move {
+        loop {
+            tokio::time::sleep(Duration::from_secs(60)).await;
+            check_idle_kosmos(&idle_kosmos_wdg).await;
         }
     });
 
@@ -5995,6 +6216,7 @@ mod tests {
             llama_server_url:    "http://127.0.0.1:8081".to_string(),
             akasha_semaphore:    Arc::new(Semaphore::new(2)),
             mnemosyne_semaphore: Arc::new(Semaphore::new(2)),
+            kosmos_semaphore:    Arc::new(Semaphore::new(2)),
             embed_semaphore:     Arc::new(Semaphore::new(1)),
             active_priority:     Mutex::new(None),
             active_model_class:  Mutex::new(None),
@@ -6021,10 +6243,13 @@ mod tests {
             llama_server_bin:       None,
             akasha_proc:            Mutex::new(None),
             mnemosyne_proc:         Mutex::new(None),
+            kosmos_proc:            Mutex::new(None),
             akasha_crash_count:     Mutex::new(0),
             akasha_disabled:        Arc::new(AtomicBool::new(false)),
             mnemosyne_crash_count:  Mutex::new(0),
             mnemosyne_disabled:     Arc::new(AtomicBool::new(false)),
+            kosmos_crash_count:     Mutex::new(0),
+            kosmos_disabled:        Arc::new(AtomicBool::new(false)),
             app_handle:          Mutex::new(None),
             embed_model:         Mutex::new("bge-m3".to_string()),
             embed_n_gpu_layers:  Mutex::new(DEFAULT_EMBED_N_GPU_LAYERS),
@@ -6034,11 +6259,13 @@ mod tests {
             chat_health_port:      59981,
             embed_health_port:     59982,
             mnemosyne_health_port: 59983,
+            kosmos_health_port:    59984,
             cpu_p3_limit_pct:    Mutex::new(85.0),
             cached_cpu_pct:      Arc::new(AtomicU32::new(0)),
             inference_enabled:          Arc::new(AtomicBool::new(false)),
             last_akasha_request_at:     Mutex::new(std::time::Instant::now()),
             last_mnemosyne_request_at:  Mutex::new(std::time::Instant::now()),
+            last_kosmos_request_at:     Mutex::new(std::time::Instant::now()),
             last_embed_request_at:      Mutex::new(std::time::Instant::now()),
             idle_timeout_secs:  300,
             cpu_fallback_max_mb: 2048,
@@ -6126,13 +6353,19 @@ mod tests {
     }
 
     #[test]
-    fn all_three_server_ports_are_distinct() {
-        assert_ne!(AKASHA_SERVER_PORT, EMBED_SERVER_PORT,
-            "AKASHA e embed-server devem usar portas diferentes");
-        assert_ne!(AKASHA_SERVER_PORT, MNEMOSYNE_SERVER_PORT,
-            "AKASHA e Mnemosyne devem usar portas diferentes");
-        assert_ne!(EMBED_SERVER_PORT, MNEMOSYNE_SERVER_PORT,
-            "embed e Mnemosyne devem usar portas diferentes");
+    fn kosmos_server_port_is_8084() {
+        assert_eq!(KOSMOS_SERVER_PORT, 8084, "porta do servidor KOSMOS deve ser 8084");
+    }
+
+    #[test]
+    fn all_four_server_ports_are_distinct() {
+        let ports = [AKASHA_SERVER_PORT, EMBED_SERVER_PORT, MNEMOSYNE_SERVER_PORT, KOSMOS_SERVER_PORT];
+        for i in 0..ports.len() {
+            for j in (i + 1)..ports.len() {
+                assert_ne!(ports[i], ports[j],
+                    "portas dos servidores devem ser todas distintas (índices {i} e {j})");
+            }
+        }
     }
 
     // ── Testes de route_request (Passo 1) ────────────────────
@@ -6167,9 +6400,15 @@ mod tests {
     }
 
     #[test]
-    fn route_kosmos_returns_akasha() {
-        assert_eq!(route_request("kosmos"), ServerTarget::Akasha,
-            "KOSMOS usa o servidor AKASHA (análise de artigos)");
+    fn route_kosmos_returns_kosmos() {
+        assert_eq!(route_request("kosmos"), ServerTarget::Kosmos,
+            "KOSMOS usa o servidor próprio (porta 8084, análise de artigos)");
+    }
+
+    #[test]
+    fn route_kosmos_case_insensitive() {
+        assert_eq!(route_request("KOSMOS"), ServerTarget::Kosmos);
+        assert_eq!(route_request("Kosmos"), ServerTarget::Kosmos);
     }
 
     #[test]
@@ -6685,6 +6924,140 @@ mod tests {
         assert!(killed, "kill_mnemosyne_proc deve retornar true quando havia processo");
         assert!(!state.mnemosyne_proc_active().await,
             "mnemosyne_proc_active deve ser false após kill");
+    }
+
+    // ── Testes de kosmos_proc (Fase 7 — ServerTarget::Kosmos) ─────────────────
+
+    #[tokio::test]
+    async fn kosmos_proc_active_false_when_no_proc() {
+        let td = tempfile::tempdir().unwrap();
+        let state = make_test_state(td.path().to_path_buf());
+        assert!(!state.kosmos_proc_active().await,
+            "kosmos_proc_active deve ser false quando não há processo");
+    }
+
+    #[tokio::test]
+    async fn kosmos_proc_active_true_when_set() {
+        let td = tempfile::tempdir().unwrap();
+        let state = make_test_state(td.path().to_path_buf());
+        let child = tokio::process::Command::new("sleep")
+            .arg("1")
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .spawn()
+            .expect("sleep disponível");
+        *state.0.kosmos_proc.lock().await = Some(LlamaProcHandle {
+            child,
+            model_name: "gemma2:2b".to_string(),
+        });
+        assert!(state.kosmos_proc_active().await,
+            "kosmos_proc_active deve ser true após injetar processo");
+    }
+
+    #[tokio::test]
+    async fn kill_kosmos_proc_returns_false_when_no_proc() {
+        let td = tempfile::tempdir().unwrap();
+        let state = make_test_state(td.path().to_path_buf());
+        assert!(!state.kill_kosmos_proc().await,
+            "kill_kosmos_proc sem processo deve retornar false");
+    }
+
+    #[tokio::test]
+    async fn kill_kosmos_proc_removes_handle() {
+        let td = tempfile::tempdir().unwrap();
+        let state = make_test_state(td.path().to_path_buf());
+        let child = tokio::process::Command::new("sleep")
+            .arg("3600")
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .spawn()
+            .expect("sleep disponível");
+        *state.0.kosmos_proc.lock().await = Some(LlamaProcHandle {
+            child,
+            model_name: "gemma2:2b".to_string(),
+        });
+        assert!(state.kosmos_proc_active().await);
+        assert!(state.kill_kosmos_proc().await,
+            "kill_kosmos_proc deve retornar true quando havia processo");
+        assert!(!state.kosmos_proc_active().await,
+            "kosmos_proc_active deve ser false após kill");
+    }
+
+    #[tokio::test]
+    async fn kosmos_disabled_starts_false() {
+        let dir = tempfile::tempdir().expect("tmpdir");
+        let state = make_test_state(dir.path().to_path_buf());
+        assert!(!state.0.kosmos_disabled.load(Ordering::Relaxed),
+            "kosmos_disabled deve iniciar false");
+    }
+
+    #[tokio::test]
+    async fn kosmos_semaphore_independent_from_akasha_and_mnemosyne() {
+        let dir = tempfile::tempdir().expect("tmpdir");
+        let state = make_test_state(dir.path().to_path_buf());
+        // Segurar todos os permits do KOSMOS não afeta os outros servidores.
+        let _p = state.0.kosmos_semaphore.clone().try_acquire_many_owned(2)
+            .expect("kosmos_semaphore inicia com 2 permits");
+        assert_eq!(state.0.akasha_semaphore.available_permits(), 2,
+            "akasha_semaphore não é tocado pelo KOSMOS");
+        assert_eq!(state.0.mnemosyne_semaphore.available_permits(), 2,
+            "mnemosyne_semaphore não é tocado pelo KOSMOS");
+    }
+
+    #[tokio::test]
+    async fn check_idle_kosmos_kills_when_idle() {
+        let td = tempfile::tempdir().unwrap();
+        let state = make_test_state(td.path().to_path_buf());
+        let child = tokio::process::Command::new("sleep")
+            .arg("3600")
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .spawn()
+            .expect("sleep disponível");
+        *state.0.kosmos_proc.lock().await = Some(LlamaProcHandle {
+            child,
+            model_name: "gemma2:2b".to_string(),
+        });
+        // Falsifica timestamp como (idle_timeout_secs + 1) atrás
+        *state.0.last_kosmos_request_at.lock().await = std::time::Instant::now()
+            .checked_sub(std::time::Duration::from_secs(state.0.idle_timeout_secs + 1))
+            .expect("subtração de instante");
+        let killed = check_idle_kosmos(&state).await;
+        assert!(killed, "check_idle_kosmos deve matar KOSMOS ocioso");
+        assert!(!state.kosmos_proc_active().await, "proc KOSMOS deve ser None após idle");
+    }
+
+    #[tokio::test]
+    async fn check_idle_kosmos_keeps_when_recent() {
+        let td = tempfile::tempdir().unwrap();
+        let state = make_test_state(td.path().to_path_buf());
+        let child = tokio::process::Command::new("sleep")
+            .arg("3600")
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .spawn()
+            .expect("sleep disponível");
+        *state.0.kosmos_proc.lock().await = Some(LlamaProcHandle {
+            child,
+            model_name: "gemma2:2b".to_string(),
+        });
+        *state.0.last_kosmos_request_at.lock().await = std::time::Instant::now();
+        let killed = check_idle_kosmos(&state).await;
+        assert!(!killed, "KOSMOS recente não deve ser descarregado");
+        assert!(state.kosmos_proc_active().await, "proc KOSMOS deve continuar ativo");
+        state.kill_kosmos_proc().await;
+    }
+
+    #[tokio::test]
+    async fn check_idle_kosmos_noop_when_no_proc() {
+        let td = tempfile::tempdir().unwrap();
+        let state = make_test_state(td.path().to_path_buf());
+        assert!(!check_idle_kosmos(&state).await,
+            "sem proc, check_idle_kosmos retorna false sem panic");
     }
 
     // ── sysfs_vram_mb — 3 cenários ────────────────────────────────────────────
