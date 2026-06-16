@@ -531,18 +531,38 @@ AKASHA/
 
 ---
 
-## Dependências externas opcionais
+## Serviços externos
 
-| Serviço | Uso | Como configurar |
-|---------|-----|----------------|
-| LOGOS (llama-server) | Reflexão, insights, extração de tópicos, expansão de query | Automático via `ecosystem_client` |
-| SearXNG (self-hosted) | Busca web com múltiplos engines (recomendado) | `akasha.web_search_backend` no `ecosystem.json` (painel Busca do HUB). Ver **[Rodando o SearXNG](#rodando-o-searxng-fedora--cachyos--windows-10)** para instalação por SO. |
-| Unpaywall | Download de papers acadêmicos | `akasha.unpaywall_email` no `ecosystem.json` |
-| qBittorrent | Downloads via torrent | `akasha.qbt_*` no `ecosystem.json` |
+### SearXNG — backend de busca web (necessário)
 
-**SearXNG vs DuckDuckGo:** sem SearXNG configurado, o AKASHA usa DDG como fallback (~20–50 resultados por query). Com SearXNG, agrega múltiplos engines em paralelo (~100 resultados) sem comprometer privacidade (o tráfego passa pelo seu servidor/instância). Ver a seção abaixo para instalar.
+O SearXNG **não é opcional** no uso pretendido: é o backend que agrega Google/Bing/Startpage/etc. em paralelo (~100 resultados/busca). Sem ele o AKASHA degrada para o **DuckDuckGo** (~20–50 resultados) como último recurso — funciona, mas é o modo reduzido, não o pretendido.
 
-Sem nenhum desses serviços, o AKASHA funciona normalmente como buscador local puro.
+- **Instalação (por SO):** ver **[Rodando o SearXNG](#rodando-o-searxng-fedora--cachyos--windows-10)** (Fedora/Docker, CachyOS, Windows).
+- **Configuração:** `akasha.web_search_backend` no `ecosystem.json` — editável no painel **Busca** do HUB. Pré-requisitos do `settings.yml` (formato `json`, `limiter: false`) e curadoria de engines documentados na mesma seção.
+
+### LOGOS — inferência de IA (opcional; necessário só para a assistente)
+
+Reflexão, insights, extração de tópicos/entidades, expansão de query e busca semântica vetorial. A **ferramenta** de busca funciona 100% sem ele; só a **assistente Akasha** fica inativa sem ele.
+
+- **Instalação:** faz parte do HUB — nada a instalar à parte. Basta o HUB estar rodando (premissa do ecossistema).
+- **Configuração:** automática via `ecosystem_client` (a URL de inferência vem do HUB). Os modelos por função são atribuídos no painel **LOGOS** do HUB; nada a configurar no `ecosystem.json` da AKASHA.
+
+### Unpaywall — PDFs de acesso aberto (opcional)
+
+Encontra a versão aberta de papers científicos por DOI (exige um e-mail, regra da API).
+
+- **Instalação:** nada (API pública gratuita).
+- **Configuração:** o download (`services/paper_download.py`) lê o e-mail da **variável de ambiente `UNPAYWALL_EMAIL`**. ⚠️ O campo `akasha.unpaywall_email` aparece no `ecosystem.json`, mas **não é lido pelo código atual** — ver "Inconsistências" abaixo.
+
+### qBittorrent — download via torrent (não implementado)
+
+⚠️ A dependência `qbittorrent-api` está declarada e há defaults de host/porta em `config.py`, mas **nenhum código atual usa o qBittorrent**: os downloads são HTTP direto (`services/downloader.py`). Tratar como **planejado**, não funcional hoje.
+
+> **Inconsistências encontradas (sinalizadas para correção):**
+> 1. `akasha.unpaywall_email` está documentado/presente no `ecosystem.json`, mas o código usa a env var `UNPAYWALL_EMAIL` (no download) e um e-mail **hardcoded** em `services/paper_search.py` (no enriquecimento da busca). A config exposta não tem efeito.
+> 2. Integração com qBittorrent não implementada apesar da dependência declarada.
+
+Sem os serviços **opcionais**, o AKASHA continua funcionando como buscador (acervo local + web). Sem o **SearXNG**, a busca web cai para o DuckDuckGo (modo reduzido). Sem o **LOGOS**, só a assistente Akasha (reflexão/insights/chat) fica inativa.
 
 ---
 
@@ -664,12 +684,51 @@ Por busca, o AKASHA consulta em paralelo: **SearXNG** (engines curados acima) **
 
 ---
 
-## Rodar
+## Instalação e execução
+
+### Pré-requisito: `uv`
+
+O AKASHA usa o **`uv`** como gerenciador de pacotes — ele cria e mantém o venv próprio do AKASHA (`AKASHA/.venv`, Python 3.13) a partir do `pyproject.toml`. Instale o `uv` primeiro:
 
 ```bash
-# CachyOS / Linux
-bash iniciar.sh
-# acesse http://localhost:7071
-```
+# Linux / CachyOS / macOS
+curl -LsSf https://astral.sh/uv/install.sh | sh
 
-O script roda `uv sync` e inicia com `uv run python main.py`. O servidor registra automaticamente seu endereço no `ecosystem.json`.
+# Windows (PowerShell)
+powershell -c "irm https://astral.sh/uv/install.ps1 | iex"
+```
+(Documentação: <https://docs.astral.sh/uv/getting-started/installation/>)
+
+> **O AKASHA não roda isolado.** Ele importa o `ecosystem_client` da **raiz do ecossistema** (via `sys.path`, em `config.py` e outros). A pasta `AKASHA/` precisa permanecer **dentro do repositório do ecossistema** — não a mova para fora, ou o startup falha ao resolver `ecosystem_client`.
+
+### Setup do ambiente (instalar dependências)
+
+O ponto de entrada **oficial** de setup é o script `atualizar` na raiz do ecossistema, que roda `uv sync` para o AKASHA (e prepara os demais apps):
+
+```bash
+# Linux / CachyOS
+bash atualizar.sh
+
+# Windows
+atualizar.bat
+```
+Alternativa só-AKASHA (dentro de `AKASHA/`): `uv sync --python 3.13`.
+
+### Rodar
+
+```bash
+# Linux / CachyOS
+bash iniciar.sh
+
+# Windows (terminal ou duplo-clique no arquivo)
+iniciar.bat
+```
+Os dois scripts rodam `uv sync` e sobem o servidor com `uv run python main.py`, abrindo `http://localhost:7071`. O servidor registra seu endereço no `ecosystem.json` automaticamente.
+
+### Downloads de primeiro uso (exigem rede)
+
+Algumas dependências baixam dados/modelos **na primeira vez que são usadas** — o `uv sync` instala o pacote, mas não esses recursos. Todos degradam graciosamente se faltarem (em uso offline, ficam indisponíveis até a primeira execução com rede):
+
+- **NLTK `vader_lexicon`** — baixado automaticamente na primeira análise de sentimento (assistente Akasha).
+- **Modelos locais de reranking (`flashrank`) e de embeddings (`sentence-transformers`)** — baixados do HuggingFace na primeira busca semântica/rerank local. *(São caminho de fallback: a busca semântica primária usa o LOGOS.)*
+- **Pacotes de idioma do `argostranslate`** — necessários para tradução inline offline; sem eles, a tradução cai para o LibreTranslate (online).
