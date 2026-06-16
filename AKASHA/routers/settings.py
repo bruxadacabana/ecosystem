@@ -35,6 +35,7 @@ _LANGUAGE_OPTIONS = [
 _DEFAULTS: dict = {
     "web_search_backend":  "",
     "marginalia_api_key":  "",
+    "unpaywall_email":     "",
     "invidious_instance":  "",
     "max_per_domain":      5,
     "web_pages":           4,
@@ -123,6 +124,7 @@ async def settings_post(request: Request) -> RedirectResponse:
     updates = {
         "web_search_backend":     _str("web_search_backend"),
         "marginalia_api_key":     _str("marginalia_api_key"),
+        "unpaywall_email":        _str("unpaywall_email"),
         "invidious_instance":     _str("invidious_instance"),
         "max_per_domain":         _int("max_per_domain", 5, lo=0),
         "web_pages":              _int("web_pages", 4, lo=1, hi=10),

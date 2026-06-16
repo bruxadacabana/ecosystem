@@ -9,9 +9,8 @@ import asyncio
 import httpx
 from pydantic import BaseModel
 
+import config
 from services.web_search import SearchResult
-
-_UNPAYWALL_EMAIL = "jenmangelo@gmail.com"
 
 # ---------------------------------------------------------------------------
 # Modelo
@@ -144,8 +143,11 @@ async def _search_openalex(query: str, max_results: int) -> list[PaperResult]:
         "search":   query,
         "per_page": min(max_results, 25),
         "select":   _OA_SELECT,
-        "mailto":   _UNPAYWALL_EMAIL,
     }
+    # mailto entra no "polite pool" da OpenAlex — só envia se houver e-mail configurado.
+    _email = config.get_unpaywall_email()
+    if _email:
+        params["mailto"] = _email
     try:
         async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
             resp = await client.get(f"{_OA_BASE}/works", params=params)
@@ -213,6 +215,10 @@ async def _search_openalex(query: str, max_results: int) -> list[PaperResult]:
 
 async def _enrich_unpaywall(results: list[PaperResult]) -> None:
     """Acrescenta PDF de acesso aberto via Unpaywall para resultados sem PDF. In-place."""
+    email = config.get_unpaywall_email()
+    if not email:
+        # Unpaywall exige e-mail (configurável na UI). Sem ele, pula o enriquecimento.
+        return
     needs = [r for r in results if r.doi and not r.pdf_url]
     if not needs:
         return
@@ -222,7 +228,7 @@ async def _enrich_unpaywall(results: list[PaperResult]) -> None:
             async with httpx.AsyncClient(timeout=5.0) as client:
                 resp = await client.get(
                     f"https://api.unpaywall.org/v2/{r.doi}",
-                    params={"email": _UNPAYWALL_EMAIL},
+                    params={"email": email},
                 )
                 if resp.status_code == 200:
                     best = resp.json().get("best_oa_location") or {}
