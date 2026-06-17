@@ -99,6 +99,7 @@ Qual teste cobre o caso agora, ou por que não existe um.
 | [BUG-036](#bug-036) | FIXED | 2026-06-05 | HUB/LOGOS | `effective_gpu_layers` com orçamento chumbado (90%) + KV cache ~3x inflado → achava que 3B+7B não cabiam na GPU e jogava o 7B do Mnemosyne na CPU (RAM do sistema) → RAM esgotava, kernel matava o 7B, watchdog reiniciava → espiral que TRAVAVA o PC. Fix: orçamento = `vram_limit_pct` configurado + KV realista + rede de segurança (descarregar o outro LLM e usar GPU, nunca CPU para chat) |
 | [BUG-037](#bug-037) | FIXED | 2026-06-05 | HUB/LOGOS | Com AKASHA+Mnemosyne juntos, um modelo crasha (pressão de RAM dos apps), o watchdog reinicia, mas a VRAM do modelo MORTO ainda não foi reclamada → cai na CPU (rede de segurança do BUG-036 não disparou: o handle do outro estava morto, não "ativo") → 6,7 GB de RAM → OOM-killer derruba o ecossistema. Fix: a rede de segurança ESPERA a VRAM liberar (retry ~9s) em vez de cair na CPU — nunca CPU para chat, exceto último recurso |
 | [BUG-038](#bug-038) | FIXED | 2026-06-11 | KOSMOS (app/utils/paths.py) | logs do KOSMOS não aparecem na aba Monitor do HUB — gravados em caminho local, fora de `{sync_root}/kosmos/kosmos.log` que o HUB lê |
+| [BUG-039](#bug-039) | FIXED | 2026-06-16 | AKASHA (services/paper_search.py, paper_download.py) | e-mail pessoal hardcoded (`jenmangelo@gmail.com`) para a API do Unpaywall/OpenAlex; download lia de env var `UNPAYWALL_EMAIL`; o campo `akasha.unpaywall_email` não era lido nem exposto na UI. Migrado para config lida em runtime + campo em Settings |
 
 ---
 
@@ -2107,3 +2108,51 @@ Degradação de observabilidade: impossível acompanhar o KOSMOS pelo Monitor do
 
 #### Teste de regressão
 `KOSMOS/tests/test_log_path.py` (5): sync_root configurado → `{sync_root}/kosmos/kosmos.log` (+ diretório criado); casa com a convenção do HUB; sync_root None → fallback local; `get_sync_root` lança → fallback local; nome do arquivo = `kosmos.log`. Suíte KOSMOS: 359 ok.
+
+---
+
+### BUG-039 · [FIXED] · E-mail pessoal hardcoded para o Unpaywall/OpenAlex (e config `unpaywall_email` não lida/sem UI)
+
+#### Identificação
+- **Data:** 2026-06-16
+- **App(s):** AKASHA
+- **Componente:** `services/paper_search.py`, `services/paper_download.py`, `config.py`, `routers/settings.py`, `templates/settings.html`
+- **Commit do fix:** pendente
+- **Descoberta via:** revisão-de-código (ao verificar a completude do README do AKASHA)
+- **Tempo de diagnóstico:** ~15 min
+
+#### Ambiente
+- **Máquina(s) afetadas:** todas
+- **OS:** Windows 10 / CachyOS / Fedora
+- **Hardware relevante:** n/a
+- **Modo:** produção / dev
+- **Reproduzível em:** qualquer ambiente
+
+#### Pré-condição para reproduzir
+Inspecionar o código de busca/download de papers, ou tentar configurar o e-mail do Unpaywall pela UI/`ecosystem.json`.
+
+#### Sintoma observado
+1. `services/paper_search.py` continha o e-mail pessoal da usuária **hardcoded** (`jenmangelo@gmail.com`) — usado tanto no `mailto` da OpenAlex quanto no `email` da API do Unpaywall. Dado pessoal versionado e sincronizado no repositório.
+2. `services/paper_download.py` lia o e-mail de uma **variável de ambiente** (`UNPAYWALL_EMAIL`), que na prática nunca era definida → download via Unpaywall silenciosamente indisponível.
+3. O campo `akasha.unpaywall_email` aparecia no `ecosystem.json`/README, mas **nenhum código o lia** e **não havia campo na UI** para editá-lo.
+
+#### Logs
+```
+(sem erro em runtime — falha silenciosa: download via Unpaywall apenas não acontecia)
+```
+
+#### Causa raiz
+Três fontes de verdade desconexas para o mesmo valor: hardcoded (paper_search), env var (paper_download) e um campo de config documentado mas órfão (`akasha.unpaywall_email`). Viola a diretiva "nenhuma informação pessoal hardcoded" e "toda configuração deve estar na UI".
+
+#### Impacto
+Degradação + privacidade: e-mail pessoal exposto no repositório; download de PDFs via Unpaywall não configurável pela usuária e efetivamente inerte (env var ausente).
+
+#### Fix aplicado
+- `config.py`: nova chave `unpaywall_email` (lida do `ecosystem.json`) + helper `get_unpaywall_email()` que lê **fresco** em runtime (reflete edição na UI sem reiniciar), com fallback ao valor de import e default vazio.
+- `services/paper_search.py`: removido o e-mail hardcoded; `_search_openalex` só envia `mailto` se houver e-mail; `_enrich_unpaywall` pula graciosamente quando vazio.
+- `services/paper_download.py`: `_fetch_unpaywall` usa `config.get_unpaywall_email()` (removida a env var).
+- `routers/settings.py` + `templates/settings.html`: campo **E-mail Unpaywall** exposto na UI (`unpaywall_email` em `_DEFAULTS` e no POST).
+- README do AKASHA atualizado (seção Papers, Serviços externos e Configuração).
+
+#### Teste de regressão
+`AKASHA/tests/test_unpaywall_config.py` (8): leitura fresca do ecosystem.json (valor, strip, chave ausente, erro→fallback); `_enrich_unpaywall` não chama HTTP sem e-mail; `_fetch_unpaywall` retorna None sem e-mail; `unpaywall_email` presente nos defaults do Settings; e **regressão**: nenhum `jenmangelo@gmail.com` em `services/*.py`. 8 passed.

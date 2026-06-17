@@ -117,9 +117,9 @@ Os highlights são pesquisáveis e ficam vinculados à URL — se você arquivar
 
 ### Papers
 
-Download de artigos acadêmicos em PDF diretamente pela interface. O AKASHA usa o **Unpaywall** (serviço gratuito que agrega versões abertas de papers científicos) para encontrar o PDF sem paywall. Requer um endereço de e-mail válido configurado em `ecosystem.json` → `akasha.unpaywall_email` (exigência da API do Unpaywall).
+Download de artigos acadêmicos em PDF diretamente pela interface. O AKASHA usa o **Unpaywall** (serviço gratuito que agrega versões abertas de papers científicos) para encontrar o PDF sem paywall. Requer um e-mail válido (exigência da API), configurado em **Settings → E-mail Unpaywall** (campo `akasha.unpaywall_email`). Sem e-mail configurado, o download via Unpaywall fica indisponível (degrada graciosamente).
 
-Papers baixados ficam em `{ecosystem_root}/akasha/Papers/`. Para papers que só existem via torrent, há integração com qBittorrent — o download é disparado pela interface e acompanhado na fila de downloads.
+Papers baixados ficam em `{ecosystem_root}/akasha/Papers/`. O download é HTTP direto (URL → arXiv → Unpaywall), acompanhado na fila de downloads. *(Download via torrent/qBittorrent é planejado — não implementado hoje.)*
 
 ### Histórico de atividade
 
@@ -426,38 +426,104 @@ GET  /health                      Status do servidor
 
 ## Configuração
 
-Lida de `ecosystem.json` via `ecosystem_client` no startup:
+Toda a configuração vive na seção `akasha` do `ecosystem.json` e é lida via `ecosystem_client`. **O HUB é a fonte de verdade** — não editar o `ecosystem.json` à mão com o HUB rodando.
+
+**Onde editar (toda config tem UI):**
+- **AKASHA → Settings (`/settings`)**: parâmetros de busca, fontes, IA, histórico (a maioria das chaves abaixo).
+- **HUB**: caminhos de dados (`data_path`, `archive_path`), prompt de personalidade e seeds de interesse da assistente.
+
+Exemplo (seção `akasha` do `ecosystem.json`):
 
 ```json
 {
   "akasha": {
     "base_url": "http://127.0.0.1:7071",
     "exe_path": "...",
-    "unpaywall_email": "seu@email.com",
+    "data_path": "{ecosystem_root}/akasha",
+    "archive_path": "{ecosystem_root}/akasha",
     "personality_prompt": "...",
     "interest_seeds": ["tecnologia", "filosofia"],
+
     "web_search_backend": "http://localhost:8888",
     "marginalia_api_key": "",
+    "unpaywall_email": "seu@email.com",
+    "invidious_instance": "",
     "max_per_domain": 5,
     "web_pages": 4,
     "search_languages": [],
+    "default_city": "",
+
+    "src_web": true, "src_local": true, "src_sites": true,
+    "src_papers": false, "src_videos": false, "src_images": false,
+
     "semantic_search": true,
-    "default_city": ""
+    "reranking": false,
+    "llm_query_expansion": true,
+    "deep_research_max_docs": 8,
+
+    "save_search_history": true,
+    "save_clicks": true,
+    "interest_consolidate_interval_min": 30
   }
 }
 ```
 
+**Dados e identidade (HUB / auto):**
+
+| Campo | Padrão | Onde | Descrição |
+|-------|--------|------|-----------|
+| `base_url` | auto | auto | URL onde o servidor se registra (escrito no startup). |
+| `exe_path` | auto | auto | Caminho do `iniciar.sh`/`iniciar.bat` (escrito no startup). |
+| `data_path` | pasta local | HUB | Diretório do banco `akasha.db`. Vazio = `AKASHA/akasha.db`. |
+| `archive_path` | pasta local | HUB | Diretório dos arquivos salvos (`Web/`, `Papers/`). |
+| `personality_prompt` | default interno | HUB | Prompt-base de personalidade da assistente Akasha. |
+| `interest_seeds` | `[]` | HUB | Sementes de interesse iniciais da assistente. |
+
+**Busca web e fontes externas (Settings):**
+
 | Campo | Padrão | Descrição |
 |-------|--------|-----------|
-| `web_search_backend` | `""` (DDG) | URL base do SearXNG self-hosted. Vazio = usa DuckDuckGo. |
-| `marginalia_api_key` | `""` (public) | Chave da API da Marginalia (web indie/nicho). Vazio = chave pública compartilhada (funciona). Chave própria (rate limit melhor) via `contact@marginalia-search.com`. Editável em Settings. |
-| `max_per_domain` | `5` | Máximo de resultados por domínio (0 = sem limite). Override: `?diversity=N`. |
-| `web_pages` | `4` | Páginas de resultados a buscar em paralelo (1–10). Override: `?web_pages=N`. |
-| `search_languages` | `[]` | Lista de idiomas de resultado. Vazio = todos os idiomas (recomendado). |
-| `semantic_search` | `true` | Habilita busca vetorial (embeddings via LOGOS) além do FTS5. Embeddings são gerados automaticamente ao indexar (fire-and-forget, sem bloquear FTS5). Arquivos já indexados que ainda não têm embedding são processados em backfill no startup (até 50 por vez, Semáforo 2, P3). Busca vetorial ativa quando há ≥ 10 embeddings e LOGOS disponível — fallback silencioso para só FTS5 caso contrário. |
-| `default_city` | `""` | Cidade padrão para widget de previsão do tempo. |
+| `web_search_backend` | `""` (DDG) | URL base do SearXNG. Vazio = usa DuckDuckGo. Ver [Rodando o SearXNG](#rodando-o-searxng-fedora--cachyos--windows-10). |
+| `marginalia_api_key` | `""` (public) | Chave da Marginalia (web indie/nicho). Vazio = chave pública (funciona; rate limit compartilhado). Chave própria via `contact@marginalia-search.com`. |
+| `unpaywall_email` | `""` | E-mail exigido pela API do Unpaywall/OpenAlex para baixar PDFs abertos. Vazio = Unpaywall indisponível. |
+| `invidious_instance` | `""` | URL de instância Invidious (vídeos do YouTube sem rastreamento). |
 
-O HUB é a fonte de verdade — não editar `ecosystem.json` diretamente quando o HUB estiver rodando. O prompt de personalidade e as seeds de interesse são editáveis via HUB.
+**Apresentação e idioma da busca (Settings):**
+
+| Campo | Padrão | Descrição |
+|-------|--------|-----------|
+| `max_per_domain` | `5` | Máximo de resultados por domínio (0 = sem limite). Override: `?diversity=N`. |
+| `web_pages` | `4` | Páginas de resultados web a buscar em paralelo (1–10). Override: `?web_pages=N`. |
+| `search_languages` | `[]` | Idiomas de resultado. Vazio = todos (recomendado). |
+| `default_city` | `""` | Cidade padrão do widget de previsão do tempo. |
+
+**Fontes ligadas por padrão (Settings):**
+
+| Campo | Padrão | Descrição |
+|-------|--------|-----------|
+| `src_web` | `true` | Incluir resultados da web por padrão. |
+| `src_local` | `true` | Incluir o acervo local (arquivos) por padrão. |
+| `src_sites` | `true` | Incluir a biblioteca (sites rastreados) por padrão. |
+| `src_papers` | `false` | Incluir papers acadêmicos por padrão. |
+| `src_videos` | `false` | Incluir vídeos (via Invidious) por padrão. |
+| `src_images` | `false` | Incluir imagens por padrão. |
+
+**IA / busca semântica (Settings):**
+
+| Campo | Padrão | Descrição |
+|-------|--------|-----------|
+| `semantic_search` | `true` | Busca vetorial (embeddings via LOGOS) além do FTS5. Embeddings gerados ao indexar (fire-and-forget); backfill no startup (até 50/vez, Semáforo 2, P3); ativa com ≥ 10 embeddings e LOGOS disponível — senão fallback silencioso só FTS5. |
+| `reranking` | `false` | Reordena resultados com reranker local (`flashrank` — modelo baixado no 1º uso). |
+| `llm_query_expansion` | `true` | Expansão de query via LLM (LOGOS) quando disponível; senão, expansão lexical. |
+| `deep_research_max_docs` | `8` | Nº de documentos cujo conteúdo completo é buscado na Pesquisa Profunda (1–20). |
+
+**Histórico e interesses (Settings):**
+
+| Campo | Padrão | Descrição |
+|-------|--------|-----------|
+| `save_search_history` | `true` | Registra cada busca (alimenta interesses da Akasha). |
+| `save_clicks` | `true` | Registra cliques em resultados. |
+| `interest_consolidate_interval_min` | `30` | Intervalo (min) de consolidação dos scores de interesse (5–1440). |
 
 ---
 
@@ -531,18 +597,34 @@ AKASHA/
 
 ---
 
-## Dependências externas opcionais
+## Serviços externos
 
-| Serviço | Uso | Como configurar |
-|---------|-----|----------------|
-| LOGOS (llama-server) | Reflexão, insights, extração de tópicos, expansão de query | Automático via `ecosystem_client` |
-| SearXNG (self-hosted) | Busca web com múltiplos engines (recomendado) | `akasha.web_search_backend` no `ecosystem.json` (painel Busca do HUB). Ver **[Rodando o SearXNG](#rodando-o-searxng-fedora--cachyos--windows-10)** para instalação por SO. |
-| Unpaywall | Download de papers acadêmicos | `akasha.unpaywall_email` no `ecosystem.json` |
-| qBittorrent | Downloads via torrent | `akasha.qbt_*` no `ecosystem.json` |
+### SearXNG — backend de busca web (necessário)
 
-**SearXNG vs DuckDuckGo:** sem SearXNG configurado, o AKASHA usa DDG como fallback (~20–50 resultados por query). Com SearXNG, agrega múltiplos engines em paralelo (~100 resultados) sem comprometer privacidade (o tráfego passa pelo seu servidor/instância). Ver a seção abaixo para instalar.
+O SearXNG **não é opcional** no uso pretendido: é o backend que agrega Google/Bing/Startpage/etc. em paralelo (~100 resultados/busca). Sem ele o AKASHA degrada para o **DuckDuckGo** (~20–50 resultados) como último recurso — funciona, mas é o modo reduzido, não o pretendido.
 
-Sem nenhum desses serviços, o AKASHA funciona normalmente como buscador local puro.
+- **Instalação (por SO):** ver **[Rodando o SearXNG](#rodando-o-searxng-fedora--cachyos--windows-10)** (Fedora/Docker, CachyOS, Windows).
+- **Configuração:** `akasha.web_search_backend` no `ecosystem.json` — editável no painel **Busca** do HUB. Pré-requisitos do `settings.yml` (formato `json`, `limiter: false`) e curadoria de engines documentados na mesma seção.
+
+### LOGOS — inferência de IA (opcional; necessário só para a assistente)
+
+Reflexão, insights, extração de tópicos/entidades, expansão de query e busca semântica vetorial. A **ferramenta** de busca funciona 100% sem ele; só a **assistente Akasha** fica inativa sem ele.
+
+- **Instalação:** faz parte do HUB — nada a instalar à parte. Basta o HUB estar rodando (premissa do ecossistema).
+- **Configuração:** automática via `ecosystem_client` (a URL de inferência vem do HUB). Os modelos por função são atribuídos no painel **LOGOS** do HUB; nada a configurar no `ecosystem.json` da AKASHA.
+
+### Unpaywall — PDFs de acesso aberto (opcional)
+
+Encontra a versão aberta de papers científicos por DOI (exige um e-mail, regra da API).
+
+- **Instalação:** nada (API pública gratuita).
+- **Configuração:** campo **Settings → E-mail Unpaywall** (`akasha.unpaywall_email`), lido em runtime por `config.get_unpaywall_email()`. Usado no download (`paper_download.py`) e no enriquecimento da busca de papers (`paper_search.py`). Vazio = Unpaywall indisponível (degrada graciosamente). O mesmo e-mail vai no "polite pool" da OpenAlex.
+
+### qBittorrent — download via torrent (não implementado)
+
+⚠️ A dependência `qbittorrent-api` está declarada e há defaults de host/porta em `config.py`, mas **nenhum código atual usa o qBittorrent**: os downloads são HTTP direto (`services/downloader.py`). Tratar como **planejado**, não funcional hoje.
+
+Sem os serviços **opcionais**, o AKASHA continua funcionando como buscador (acervo local + web). Sem o **SearXNG**, a busca web cai para o DuckDuckGo (modo reduzido). Sem o **LOGOS**, só a assistente Akasha (reflexão/insights/chat) fica inativa.
 
 ---
 
@@ -664,12 +746,51 @@ Por busca, o AKASHA consulta em paralelo: **SearXNG** (engines curados acima) **
 
 ---
 
-## Rodar
+## Instalação e execução
+
+### Pré-requisito: `uv`
+
+O AKASHA usa o **`uv`** como gerenciador de pacotes — ele cria e mantém o venv próprio do AKASHA (`AKASHA/.venv`, Python 3.13) a partir do `pyproject.toml`. Instale o `uv` primeiro:
 
 ```bash
-# CachyOS / Linux
-bash iniciar.sh
-# acesse http://localhost:7071
-```
+# Linux / CachyOS / macOS
+curl -LsSf https://astral.sh/uv/install.sh | sh
 
-O script roda `uv sync` e inicia com `uv run python main.py`. O servidor registra automaticamente seu endereço no `ecosystem.json`.
+# Windows (PowerShell)
+powershell -c "irm https://astral.sh/uv/install.ps1 | iex"
+```
+(Documentação: <https://docs.astral.sh/uv/getting-started/installation/>)
+
+> **O AKASHA não roda isolado.** Ele importa o `ecosystem_client` da **raiz do ecossistema** (via `sys.path`, em `config.py` e outros). A pasta `AKASHA/` precisa permanecer **dentro do repositório do ecossistema** — não a mova para fora, ou o startup falha ao resolver `ecosystem_client`.
+
+### Setup do ambiente (instalar dependências)
+
+O ponto de entrada **oficial** de setup é o script `atualizar` na raiz do ecossistema, que roda `uv sync` para o AKASHA (e prepara os demais apps):
+
+```bash
+# Linux / CachyOS
+bash atualizar.sh
+
+# Windows
+atualizar.bat
+```
+Alternativa só-AKASHA (dentro de `AKASHA/`): `uv sync --python 3.13`.
+
+### Rodar
+
+```bash
+# Linux / CachyOS
+bash iniciar.sh
+
+# Windows (terminal ou duplo-clique no arquivo)
+iniciar.bat
+```
+Os dois scripts rodam `uv sync` e sobem o servidor com `uv run python main.py`, abrindo `http://localhost:7071`. O servidor registra seu endereço no `ecosystem.json` automaticamente.
+
+### Downloads de primeiro uso (exigem rede)
+
+Algumas dependências baixam dados/modelos **na primeira vez que são usadas** — o `uv sync` instala o pacote, mas não esses recursos. Todos degradam graciosamente se faltarem (em uso offline, ficam indisponíveis até a primeira execução com rede):
+
+- **NLTK `vader_lexicon`** — baixado automaticamente na primeira análise de sentimento (assistente Akasha).
+- **Modelos locais de reranking (`flashrank`) e de embeddings (`sentence-transformers`)** — baixados do HuggingFace na primeira busca semântica/rerank local. *(São caminho de fallback: a busca semântica primária usa o LOGOS.)*
+- **Pacotes de idioma do `argostranslate`** — necessários para tradução inline offline; sem eles, a tradução cai para o LibreTranslate (online).

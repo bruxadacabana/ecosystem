@@ -14,8 +14,9 @@ from pathlib import Path
 
 import httpx
 
-_UNPAYWALL_EMAIL = os.environ.get("UNPAYWALL_EMAIL", "")
-_TIMEOUT_PDF     = 40.0
+import config
+
+_TIMEOUT_PDF = 40.0
 
 
 _ISBN_RE = re.compile(
@@ -60,12 +61,13 @@ async def _fetch_url(url: str, client: httpx.AsyncClient) -> bytes | None:
 
 
 async def _fetch_unpaywall(doi: str, client: httpx.AsyncClient) -> bytes | None:
-    if not _UNPAYWALL_EMAIL:
+    email = config.get_unpaywall_email()
+    if not email:
         return None
     try:
         resp = await client.get(
             f"https://api.unpaywall.org/v2/{doi}",
-            params={"email": _UNPAYWALL_EMAIL},
+            params={"email": email},
             timeout=10.0,
         )
         if resp.status_code != 200:

@@ -83,6 +83,24 @@ mnemosyne_vault:    str       = _eco.get("mnemosyne", {}).get("vault_dir",    ""
 mnemosyne_indices:  list[str] = _eco.get("mnemosyne", {}).get("index_paths",  [])
 hermes_output:      str       = _eco.get("hermes",    {}).get("output_dir",   "")
 
+# E-mail para as APIs Unpaywall/OpenAlex (exigência da API; NUNCA hardcodar — vem da UI).
+# Lido do ecosystem.json (editável em Settings do AKASHA / HUB). Vazio = funcionalidade
+# de PDF aberto via Unpaywall fica indisponível (degrada graciosamente).
+unpaywall_email:    str       = _eco.get("akasha",    {}).get("unpaywall_email", "")
+
+
+def get_unpaywall_email() -> str:
+    """E-mail Unpaywall/OpenAlex lido **fresco** do ecosystem.json (reflete edições na UI
+    sem reiniciar). Cai para o valor lido no import se a leitura falhar. Default vazio."""
+    if not _ECO_AVAILABLE:
+        return unpaywall_email
+    try:
+        eco = read_ecosystem() or {}
+        return (eco.get("akasha", {}).get("unpaywall_email", "") or "").strip()
+    except Exception:
+        return unpaywall_email
+
+
 # qBittorrent (defaults sobrescrevíveis pelo banco de settings)
 QBT_HOST_DEFAULT: str = "localhost"
 QBT_PORT_DEFAULT: int = 8080
