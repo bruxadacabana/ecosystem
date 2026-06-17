@@ -33,7 +33,8 @@ _LANGUAGE_OPTIONS = [
 ]
 
 _DEFAULTS: dict = {
-    "web_search_backend":  "",
+    "web_search_backend":          "",
+    "web_search_backend_fallback": "",
     "marginalia_api_key":  "",
     "unpaywall_email":     "",
     "invidious_instance":  "",
@@ -122,7 +123,8 @@ async def settings_post(request: Request) -> RedirectResponse:
         return key in form
 
     updates = {
-        "web_search_backend":     _str("web_search_backend"),
+        "web_search_backend":          _str("web_search_backend"),
+        "web_search_backend_fallback": _str("web_search_backend_fallback"),
         "marginalia_api_key":     _str("marginalia_api_key"),
         "unpaywall_email":        _str("unpaywall_email"),
         "invidious_instance":     _str("invidious_instance"),

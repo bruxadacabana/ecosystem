@@ -97,11 +97,19 @@
       <h2 class="settings-section-title">Backends</h2>
 
       <div class="settings-field">
-        <label class="settings-label" for="s-searxng">URL do SearXNG (self-hosted)</label>
+        <label class="settings-label" for="s-searxng">URL do SearXNG remoto (1ª opção)</label>
         <input type="url" id="s-searxng" name="web_search_backend"
                value="{{ cfg.web_search_backend }}" class="input"
-               placeholder="http://localhost:8888">
-        <span class="lenses-hint">Vazio = usar DuckDuckGo como fallback · porta padrão: 8888</span>
+               placeholder="http://192.168.0.252:8080">
+        <span class="lenses-hint">Servidor SearXNG da rede (ex.: T410). Fila de busca: remoto → local → vendorizado (porta 8889). Vazio = pula direto para os próximos.</span>
+      </div>
+
+      <div class="settings-field">
+        <label class="settings-label" for="s-searxng-fallback">URL do SearXNG local (2ª opção)</label>
+        <input type="url" id="s-searxng-fallback" name="web_search_backend_fallback"
+               value="{{ cfg.web_search_backend_fallback }}" class="input"
+               placeholder="http://localhost:8080">
+        <span class="lenses-hint">Instância SearXNG instalada nesta máquina (Docker/AUR/etc.). Usada se o remoto estiver fora. Vazio = pula para o vendorizado.</span>
       </div>
 
       <div class="settings-field">

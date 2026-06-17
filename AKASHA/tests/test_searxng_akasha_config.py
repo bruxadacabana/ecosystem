@@ -208,7 +208,13 @@ class TestFetchWebChain:
             ddg_called.append(q)
             return []
 
-        monkeypatch.setattr(_ws, "_get_searxng_url", lambda: "http://localhost:8888")
+        async def _active(): return ("remoto", "http://localhost:8888")
+        async def _no_marg(q, k, n): return []
+        async def _no_mwmbl(q, n): return []
+        monkeypatch.setattr(_ws, "_active_searxng", _active)
+        monkeypatch.setattr(_ws, "_fetch_marginalia", _no_marg)
+        monkeypatch.setattr(_ws, "_fetch_mwmbl", _no_mwmbl)
+        monkeypatch.setattr(_ws, "_get_marginalia_key", lambda: "")
         monkeypatch.setattr(_ws, "_fetch_searxng", _fake_searxng)
         monkeypatch.setattr(_ws, "_fetch_ddg", _fake_ddg)
 
@@ -232,7 +238,13 @@ class TestFetchWebChain:
             ddg_called.append(q)
             return [_ws.SearchResult(title="DDG", url="https://ddg.com", snippet="ok")]
 
-        monkeypatch.setattr(_ws, "_get_searxng_url", lambda: "http://localhost:8888")
+        async def _active(): return ("remoto", "http://localhost:8888")
+        async def _no_marg(q, k, n): return []
+        async def _no_mwmbl(q, n): return []
+        monkeypatch.setattr(_ws, "_active_searxng", _active)
+        monkeypatch.setattr(_ws, "_fetch_marginalia", _no_marg)
+        monkeypatch.setattr(_ws, "_fetch_mwmbl", _no_mwmbl)
+        monkeypatch.setattr(_ws, "_get_marginalia_key", lambda: "")
         monkeypatch.setattr(_ws, "_fetch_searxng", _fake_searxng)
         monkeypatch.setattr(_ws, "_fetch_ddg", _fake_ddg)
 
@@ -276,7 +288,13 @@ class TestDebugLogs:
         async def _fake_ddg(q, max):
             return []
 
-        monkeypatch.setattr(_ws, "_get_searxng_url", lambda: "http://localhost:8888")
+        async def _active(): return ("remoto", "http://localhost:8888")
+        async def _no_marg(q, k, n): return []
+        async def _no_mwmbl(q, n): return []
+        monkeypatch.setattr(_ws, "_active_searxng", _active)
+        monkeypatch.setattr(_ws, "_fetch_marginalia", _no_marg)
+        monkeypatch.setattr(_ws, "_fetch_mwmbl", _no_mwmbl)
+        monkeypatch.setattr(_ws, "_get_marginalia_key", lambda: "")
         monkeypatch.setattr(_ws, "_fetch_searxng", _fake_searxng)
         monkeypatch.setattr(_ws, "_fetch_ddg", _fake_ddg)
 
@@ -301,7 +319,13 @@ class TestDebugLogs:
         async def _fake_ddg(q, max):
             return []
 
-        monkeypatch.setattr(_ws, "_get_searxng_url", lambda: "http://localhost:8888")
+        async def _active(): return ("remoto", "http://localhost:8888")
+        async def _no_marg(q, k, n): return []
+        async def _no_mwmbl(q, n): return []
+        monkeypatch.setattr(_ws, "_active_searxng", _active)
+        monkeypatch.setattr(_ws, "_fetch_marginalia", _no_marg)
+        monkeypatch.setattr(_ws, "_fetch_mwmbl", _no_mwmbl)
+        monkeypatch.setattr(_ws, "_get_marginalia_key", lambda: "")
         monkeypatch.setattr(_ws, "_fetch_searxng", _fake_searxng)
         monkeypatch.setattr(_ws, "_fetch_ddg", _fake_ddg)
 

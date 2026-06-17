@@ -183,7 +183,13 @@ async def test_fetch_web_uses_searxng_when_configured(monkeypatch):
     """Com SearXNG configurado e retornando resultados → usa SearXNG."""
     import services.web_search as _ws
 
-    monkeypatch.setattr(_ws, "_get_searxng_url", lambda: "http://searxng.local")
+    async def _active(): return ("remoto", "http://searxng.local")
+    async def _no_marg(q, k, n): return []
+    async def _no_mwmbl(q, n): return []
+    monkeypatch.setattr(_ws, "_active_searxng", _active)
+    monkeypatch.setattr(_ws, "_fetch_marginalia", _no_marg)
+    monkeypatch.setattr(_ws, "_fetch_mwmbl", _no_mwmbl)
+    monkeypatch.setattr(_ws, "_get_marginalia_key", lambda: "")
 
     ddg_called: list[str] = []
 
@@ -213,7 +219,13 @@ async def test_fetch_web_falls_to_ddg_when_searxng_raises(monkeypatch):
     """SearXNG lança exceção → fallover para DDG."""
     import services.web_search as _ws
 
-    monkeypatch.setattr(_ws, "_get_searxng_url", lambda: "http://searxng.local")
+    async def _active(): return ("remoto", "http://searxng.local")
+    async def _no_marg(q, k, n): return []
+    async def _no_mwmbl(q, n): return []
+    monkeypatch.setattr(_ws, "_active_searxng", _active)
+    monkeypatch.setattr(_ws, "_fetch_marginalia", _no_marg)
+    monkeypatch.setattr(_ws, "_fetch_mwmbl", _no_mwmbl)
+    monkeypatch.setattr(_ws, "_get_marginalia_key", lambda: "")
 
     async def _mock_searxng(q, n, url, n_pages=1, lang=""):
         raise ConnectionError("offline")
@@ -236,7 +248,13 @@ async def test_fetch_web_falls_to_ddg_when_searxng_empty(monkeypatch):
     """SearXNG retorna lista vazia → fallover para DDG."""
     import services.web_search as _ws
 
-    monkeypatch.setattr(_ws, "_get_searxng_url", lambda: "http://searxng.local")
+    async def _active(): return ("remoto", "http://searxng.local")
+    async def _no_marg(q, k, n): return []
+    async def _no_mwmbl(q, n): return []
+    monkeypatch.setattr(_ws, "_active_searxng", _active)
+    monkeypatch.setattr(_ws, "_fetch_marginalia", _no_marg)
+    monkeypatch.setattr(_ws, "_fetch_mwmbl", _no_mwmbl)
+    monkeypatch.setattr(_ws, "_get_marginalia_key", lambda: "")
 
     async def _mock_searxng(q, n, url, n_pages=1, lang=""):
         return []
@@ -259,7 +277,13 @@ async def test_fetch_web_no_searxng_goes_directly_to_ddg(monkeypatch):
     """Sem URL SearXNG → vai direto para DDG (sem tentar SearXNG)."""
     import services.web_search as _ws
 
-    monkeypatch.setattr(_ws, "_get_searxng_url", lambda: "")
+    async def _active(): return None
+    async def _no_marg(q, k, n): return []
+    async def _no_mwmbl(q, n): return []
+    monkeypatch.setattr(_ws, "_active_searxng", _active)
+    monkeypatch.setattr(_ws, "_fetch_marginalia", _no_marg)
+    monkeypatch.setattr(_ws, "_fetch_mwmbl", _no_mwmbl)
+    monkeypatch.setattr(_ws, "_get_marginalia_key", lambda: "")
 
     searxng_called: list[str] = []
 

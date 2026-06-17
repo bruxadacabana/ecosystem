@@ -379,13 +379,72 @@ def _is_spam_result(result: SearchResult) -> bool:
 # SearXNG — backend primário self-hosted (opcional)
 # ---------------------------------------------------------------------------
 
-def _get_searxng_url() -> str:
-    """Lê akasha.web_search_backend do ecosystem.json. Vazio = SearXNG desabilitado."""
+def _akasha_cfg() -> dict:
+    """Config da seção `akasha` do ecosystem.json (vazio em erro)."""
     try:
         from ecosystem_client import get_akasha_config as _gc  # type: ignore
-        return ((_gc() or {}).get("web_search_backend", "") or "").rstrip("/")
+        return _gc() or {}
     except Exception:
-        return ""
+        return {}
+
+
+def _get_searxng_url() -> str:
+    """Lê akasha.web_search_backend do ecosystem.json. Vazio = SearXNG remoto desabilitado."""
+    return (_akasha_cfg().get("web_search_backend", "") or "").rstrip("/")
+
+
+# URL padrão da instância SearXNG VENDORIZADA (porta dedicada em settings.base.yml).
+# É plumbing interno (porta que controlamos), não config de usuário — constante com
+# override opcional via akasha.web_search_backend_vendor.
+VENDOR_SEARXNG_URL = "http://127.0.0.1:8889"
+
+
+def _searxng_candidates() -> list[tuple[str, str]]:
+    """Candidatos SearXNG em ordem de prioridade: (label, url).
+
+    1º remoto (`web_search_backend`); 2º local (`web_search_backend_fallback`);
+    3º vendorizado (`web_search_backend_vendor` ou VENDOR_SEARXNG_URL). O vendor é
+    sempre incluído como último recurso — se o processo não estiver de pé, o probe
+    de saúde simplesmente o descarta.
+    """
+    cfg = _akasha_cfg()
+    out: list[tuple[str, str]] = []
+    remote = (cfg.get("web_search_backend", "") or "").rstrip("/")
+    if remote:
+        out.append(("remoto", remote))
+    local = (cfg.get("web_search_backend_fallback", "") or "").rstrip("/")
+    if local:
+        out.append(("local", local))
+    vendor = (cfg.get("web_search_backend_vendor", "") or VENDOR_SEARXNG_URL).rstrip("/")
+    out.append(("vendor", vendor))
+    return out
+
+
+async def _searxng_alive(url: str) -> bool:
+    """True se o SearXNG em `url` responde `/healthz` com 200 (probe rápido)."""
+    try:
+        async with httpx.AsyncClient(timeout=2.5) as client:
+            resp = await client.get(f"{url}/healthz")
+        return resp.status_code == 200
+    except Exception:
+        return False
+
+
+async def _active_searxng() -> tuple[str, str] | None:
+    """Escolhe o SearXNG de maior prioridade que está VIVO (probes em paralelo).
+
+    Retorna (label, url) ou None se nenhum candidato responder. Probar em paralelo
+    evita somar timeouts; a escolha respeita a ordem de prioridade dos candidatos.
+    """
+    cands = _searxng_candidates()
+    alive = await asyncio.gather(*[_searxng_alive(u) for _, u in cands])
+    for (label, url), ok in zip(cands, alive):
+        if ok:
+            log.debug("web_search: SearXNG ativo = %s (%s)", label, url)
+            return label, url
+        log.debug("web_search: SearXNG %s indisponível (%s)", label, url)
+    log.warning("web_search: nenhum SearXNG disponível (remoto/local/vendor) — usando só Marginalia/mwmbl/DDG")
+    return None
 
 
 _FETCH_PAGE_SIZE = 25   # resultados por página no fetch paralelo
@@ -598,19 +657,21 @@ async def _fetch_web(
     """SearXNG + Marginalia em paralelo (fundidos via RRF); DDG como fallback final.
 
     Estratégia (objetivo: máximo de resultados):
-      1. SearXNG self-hosted (se configurado) — n_pages em paralelo — agrega Google,
-         Bing, Startpage, mwmbl, etc.
-      2. Marginalia (sempre) — API pública direta, índice independente de web indie/
-         nicho que os engines mainstream não cobrem. Resultados ÚNICOS somam volume.
+      1. SearXNG — fila de disponibilidade: remoto (`web_search_backend`) → local
+         (`web_search_backend_fallback`) → vendorizado (porta 8889). Usa o de maior
+         prioridade que estiver VIVO; n_pages em paralelo (agrega Google/Bing/etc.).
+      2. Marginalia (sempre, em paralelo ao SearXNG ativo) — índice indie/nicho.
       → as duas fontes são fundidas via RRF (dedup por URL).
-      3. DuckDuckGo — fallback só se SearXNG E Marginalia não retornarem nada.
+      3. mwmbl — complemento condicional quando há poucos resultados.
+      4. DuckDuckGo — último recurso só se SearXNG E Marginalia não retornarem nada.
     """
-    searxng_url = _get_searxng_url()
+    active = await _active_searxng()
     marg_key = _get_marginalia_key()
 
     tasks: list[tuple[str, "asyncio.Future"]] = []
-    if searxng_url:
-        log.debug("web_search: SearXNG em %s (lang=%r, n_pages=%d)", searxng_url, lang, n_pages)
+    if active is not None:
+        _label, searxng_url = active
+        log.info("web_search: SearXNG %s em %s (lang=%r, n_pages=%d)", _label, searxng_url, lang, n_pages)
         tasks.append(("searxng", _fetch_searxng(query, max_results, searxng_url, n_pages=n_pages, lang=lang)))
     # Marginalia sempre roda em paralelo — complementa com web indie/nicho.
     tasks.append(("marginalia", _fetch_marginalia(query, marg_key, max_results)))
@@ -696,11 +757,12 @@ async def search_images_web(query: str, max: int = 20) -> list[dict]:
     Silenciosa em caso de falha — retorna [].
 
     Prioridade:
-      1. SearXNG com categories=images (se akasha.web_search_backend configurado)
+      1. SearXNG com categories=images (fila remoto→local→vendor; o que estiver vivo)
       2. DDG Images API
     """
-    searxng_url = _get_searxng_url()
-    if searxng_url:
+    active = await _active_searxng()
+    if active is not None:
+        _label, searxng_url = active
         try:
             results = await _fetch_searxng_images(query, max, searxng_url)
             if results:

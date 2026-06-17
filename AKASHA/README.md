@@ -634,7 +634,7 @@ O SearXNG é o backend **recomendado** para a busca web (agrega Google/Bing/Star
 
 > **Modelo de deployment.** O jeito mais simples é ter **uma** instância SearXNG na rede (num servidor sempre ligado) e todas as máquinas (Windows, CachyOS, laptop) apontarem para ela. É assim que o ecossistema roda hoje: uma instância no servidor Fedora (Dell T410) em `http://192.168.0.252:8080`, e cada app usa essa URL.
 >
-> **Fallback local:** rodar uma instância SearXNG **local** em cada máquina como fallback automático do servidor remoto está **planejado** (ver "AKASHA — SearXNG primário+fallback" no `TODO.md`), mas **ainda não implementado** — hoje o AKASHA usa **uma** URL (`web_search_backend`). Você pode apontá-la para o servidor remoto **ou** para uma instância local; as instruções por SO abaixo servem para os dois casos.
+> **Fila de disponibilidade (implementada):** o AKASHA tenta os SearXNG nesta ordem, usando o de maior prioridade que estiver **vivo** (probe `/healthz` em paralelo): 1º **remoto** (`web_search_backend`); 2º **local** (`web_search_backend_fallback`, ex.: `http://localhost:8080`); 3º **vendorizado** (porta 8889 — ver seção do SearXNG vendorizado). Ambas as URLs editáveis em **Settings**. A Marginalia roda **sempre em paralelo** ao SearXNG ativo; o DuckDuckGo é o último recurso só quando nada responde.
 
 ### Pré-requisitos comuns (qualquer instância)
 

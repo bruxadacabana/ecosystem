@@ -195,7 +195,11 @@ class TestFetchWebBackend:
             ddg_called.append(q)
             return []
 
-        monkeypatch.setattr(_mod, "_get_searxng_url", lambda: "http://localhost:8888")
+        async def _active(): return ("remoto", "http://localhost:8888")
+        async def _no_marg(q, k, n): return []
+        monkeypatch.setattr(_mod, "_active_searxng", _active)
+        monkeypatch.setattr(_mod, "_fetch_marginalia", _no_marg)
+        monkeypatch.setattr(_mod, "_get_marginalia_key", lambda: "")
         monkeypatch.setattr(_mod, "_fetch_searxng", _fake_fetch_searxng)
         monkeypatch.setattr(_mod, "_fetch_ddg", _fake_fetch_ddg)
 
@@ -219,6 +223,10 @@ class TestFetchWebBackend:
         async def _empty_marginalia(q, key, max):
             return []
 
+        async def _active(): return ("remoto", "http://localhost:8888")
+        async def _no_mwmbl(q, n): return []
+        monkeypatch.setattr(_mod, "_active_searxng", _active)
+        monkeypatch.setattr(_mod, "_fetch_mwmbl", _no_mwmbl)
         monkeypatch.setattr(_mod, "_get_searxng_url", lambda: "http://localhost:8888")
         monkeypatch.setattr(_mod, "_fetch_searxng", _fake_fetch_searxng)
         monkeypatch.setattr(_mod, "_fetch_ddg", _fake_fetch_ddg)
@@ -242,7 +250,10 @@ class TestFetchWebBackend:
         async def _empty_marginalia(q, key, max):
             return []
 
-        monkeypatch.setattr(_mod, "_get_searxng_url", lambda: "")
+        async def _active(): return None
+        async def _no_mwmbl(q, n): return []
+        monkeypatch.setattr(_mod, "_active_searxng", _active)
+        monkeypatch.setattr(_mod, "_fetch_mwmbl", _no_mwmbl)
         monkeypatch.setattr(_mod, "_fetch_ddg", _fake_fetch_ddg)
         monkeypatch.setattr(_mod, "_get_marginalia_key", lambda: "")
         monkeypatch.setattr(_mod, "_fetch_marginalia", _empty_marginalia)
