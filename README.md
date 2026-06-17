@@ -232,9 +232,11 @@ Leitor e analisador de feeds RSS/Atom para jornalistas, estudantes e ativistas.
 - Arquivamento de artigos como `.md` em `sync_root/kosmos/Web/` (`archiver.py`): frontmatter completo, seção de análise marcada `kosmos_analysis: true` (Mnemosyne trata com peso distinto), referência ABNT e dual-language quando traduzido
 - Tradução (`translator.py`): argostranslate offline (padrão) ou LOGOS; títulos dos cards traduzidos em background **P3**; tradução de artigo sob demanda **P2** com alternância original/tradução; temas da análise alimentam o `shared_topic_profile` (`interests.py`)
 - Ferramentas de investigação (aba Análise): rastreamento de entidades, pastas de investigação com dossiê `.md`, mapa de cobertura (entidade × feed × dia), comparação de enquadramento (por espectro político) e **alertas** de palavras-chave/entidades — cards são destacados (🔔) na próxima abertura da lista quando casam com um termo vigiado
+- Anotações e **highlights** no leitor: seleção de trecho → menu de contexto marca como citação/questionamento/dado verificável/contradição, com **coloração inline** por tipo e nota por destaque; exportáveis como `.md` (de uma investigação ou de um feed, agrupados por tipo)
+- **Dashboard de estatísticas** (QtCharts): artigos lidos por dia, feeds mais consumidos, sentimento ao longo do tempo, viés político médio (indicador de bolha editorial) e cobertura por entidade rastreada
 
 **Funcionalidades planejadas (fases futuras):**
-- Highlights e anotações; dashboard de estatísticas (leitura, distribuição de sentimento, bolha editorial)
+- Integração com a API do Portal da Transparência (consulta investigativa, enriquecimento de entidades) — Fase Extra
 
 **Dependências chave:** `PySide6`, `feedparser`, `trafilatura`, `beautifulsoup4`, `requests`, `argostranslate`
 

@@ -1024,14 +1024,26 @@ KOSMOS/
     │   ├── translator.py       → Tradução: argostranslate offline (padrão) ou LOGOS
     │   ├── translation_worker.py → QThread P3: traduz títulos dos cards; fila P2 para corpo sob demanda
     │   ├── archiver.py         → Gera `.md` em sync_root/kosmos/Web/ (frontmatter, análise, ABNT, dual-language)
-    │   └── interests.py        → Alimenta o shared_topic_profile com temas da análise + tags manuais
+    │   ├── interests.py        → Alimenta o shared_topic_profile com temas da análise + tags manuais
+    │   ├── entities.py         → Materializa ai_entities nas tabelas relacionais; consultas do rastreador
+    │   ├── investigations.py   → Pastas de investigação (CRUD, artigos, notas, export de dossiê .md)
+    │   ├── highlights.py       → Destaques de trechos (CRUD por tipo + exportação .md por feed/investigação)
+    │   ├── alerts.py           → Alertas de palavras-chave/entidades (casa termos vigiados nos artigos)
+    │   └── stats.py            → Métricas do dashboard (lidos/dia, feeds, sentimento, viés, cobertura)
     ├── ui/
-    │   ├── main_window.py       → Janela principal com layout 3-painéis; instancia/conecta os workers
+    │   ├── main_window.py       → Janela principal: abas Leitura | Análise; instancia/conecta os workers
     │   ├── splash_screen.py     → Tela de carregamento
     │   └── views/
     │       ├── feed_sidebar.py  → Sidebar de feeds por categoria com contadores
     │       ├── article_list.py  → Lista de cards; visuais de análise ao vivo (borda/sentimento, clickbait, chips)
-    │       └── reader_pane.py   → Painel de leitura: metadados, texto, tradução e seção de análise progressiva
+    │       ├── reader_pane.py   → Leitura: metadados, texto, tradução, análise progressiva e destaques (highlights)
+    │       ├── analysis_tab.py  → Aba Análise: rail de ferramentas + QStackedWidget
+    │       ├── entity_view.py   → Rastreador de entidades (timeline, sentimento, feeds, notas)
+    │       ├── investigation_view.py → Pastas de investigação + dossiê/destaques .md
+    │       ├── coverage_map.py  → Mapa de cobertura (entidade × feed × dia; silêncio editorial)
+    │       ├── framing_view.py  → Comparação de enquadramento por espectro político
+    │       ├── alerts_view.py   → Configuração de alertas de palavras-chave/entidades
+    │       └── stats_view.py    → Dashboard de estatísticas (QtCharts)
     ├── theme/                   → QSS (night.qss, day.qss) e fontes
     └── utils/
         ├── config.py            → KosmosConfig + integração ecosystem_client
@@ -1046,7 +1058,9 @@ KOSMOS/
 - Fase 4 (análise AI e cards vivos): ✅ logos_client, AnalysisWorker (Call A P3 + Call B P1), cards ao vivo, leitor progressivo
 - Fase 5 (arquivamento): ✅ archiver (.md, ABNT, dual-language), interests (shared_topic_profile)
 - Fase 6 (tradução): ✅ translator (argos/LOGOS), TranslationWorker (títulos P3), tradução sob demanda (P2)
-- Fases 7–8 (ferramentas de investigação, highlights/stats): pendentes
+- Fase 7 (ferramentas de investigação): ✅ aba Análise, rastreador de entidades, pastas/dossiê, mapa de cobertura, enquadramento, alertas, ServerTarget::Kosmos (porta 8084)
+- Fase 8 (estudo e stats): ✅ highlights (coloração inline) + exportação, dashboard de estatísticas (QtCharts)
+- Fase Extra (pendente): integração com a API do Portal da Transparência
 
 ---
 
@@ -1617,7 +1631,7 @@ Arquivo: `KOSMOS/pyproject.toml`
 | `beautifulsoup4` | Fallback de extração HTML quando trafilatura retorna resultado insuficiente |
 | `requests` | HTTP síncrono para fetch de feeds e scraping de artigos |
 | `argostranslate` | Tradução offline de títulos e artigos (`translator.py`); par de idiomas instalado sob demanda na 1ª tradução |
-| `matplotlib` | Gráficos e visualizações (Fase 8 — pendente) |
+| `PySide6.QtCharts` | Gráficos do dashboard de estatísticas (Fase 8) — parte do PySide6, sem dependência pip adicional |
 | `filelock` | Mutex para `ecosystem.json` |
 | `Pillow` | Processamento de imagens |
 | `html2text` | Conversão HTML → Markdown para arquivamento de artigos (Fase 5) |
