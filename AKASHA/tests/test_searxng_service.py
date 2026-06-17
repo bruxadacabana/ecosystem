@@ -36,12 +36,21 @@ SEARXNG_URL = "http://localhost:8888"
 
 
 def _systemctl(*args) -> tuple[int, str]:
-    """Executa systemctl --user com os argumentos dados."""
-    result = subprocess.run(
-        ["systemctl", "--user", *args],
-        capture_output=True,
-        text=True,
-    )
+    """Executa systemctl --user com os argumentos dados.
+
+    Em SO sem systemd (Windows, macOS), o binário `systemctl` não existe e o
+    subprocess levanta FileNotFoundError. Tratamos isso como "systemd indisponível"
+    (rc=127) para que os testes deste módulo sejam PULADOS em vez de quebrar a
+    coleção do pytest inteira no Windows.
+    """
+    try:
+        result = subprocess.run(
+            ["systemctl", "--user", *args],
+            capture_output=True,
+            text=True,
+        )
+    except (FileNotFoundError, OSError):
+        return 127, ""
     return result.returncode, result.stdout.strip()
 
 
@@ -62,6 +71,11 @@ systemd_available = pytest.mark.skipif(
     not _systemd_available(),
     reason="systemd --user não disponível neste ambiente",
 )
+
+# Todo este módulo testa o setup via systemd --user (Linux). Sem systemd (Windows,
+# macOS), pula o módulo inteiro — inclusive os testes de unit file, que antes
+# falhavam fora do Linux.
+pytestmark = systemd_available
 
 searxng_installed = pytest.mark.skipif(
     not SEARXNG_INSTALL_DIR.exists(),

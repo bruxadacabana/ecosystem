@@ -49,6 +49,12 @@ build-backend = "hatchling.build"
 [tool.uv]
 package = false
 
+[tool.pytest.ini_options]
+# Coleta apenas os testes do AKASHA. Exclui o SearXNG vendorizado, que traz a
+# própria suíte (vendor/searxng/tests) incompatível com este ambiente.
+testpaths = ["tests"]
+norecursedirs = ["vendor", ".venv", "*.egg-info", "node_modules"]
+
 [dependency-groups]
 dev = [
     "httpx>=0.28.1",

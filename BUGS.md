@@ -100,6 +100,7 @@ Qual teste cobre o caso agora, ou por que não existe um.
 | [BUG-037](#bug-037) | FIXED | 2026-06-05 | HUB/LOGOS | Com AKASHA+Mnemosyne juntos, um modelo crasha (pressão de RAM dos apps), o watchdog reinicia, mas a VRAM do modelo MORTO ainda não foi reclamada → cai na CPU (rede de segurança do BUG-036 não disparou: o handle do outro estava morto, não "ativo") → 6,7 GB de RAM → OOM-killer derruba o ecossistema. Fix: a rede de segurança ESPERA a VRAM liberar (retry ~9s) em vez de cair na CPU — nunca CPU para chat, exceto último recurso |
 | [BUG-038](#bug-038) | FIXED | 2026-06-11 | KOSMOS (app/utils/paths.py) | logs do KOSMOS não aparecem na aba Monitor do HUB — gravados em caminho local, fora de `{sync_root}/kosmos/kosmos.log` que o HUB lê |
 | [BUG-039](#bug-039) | FIXED | 2026-06-16 | AKASHA (services/paper_search.py, paper_download.py) | e-mail pessoal hardcoded (`jenmangelo@gmail.com`) para a API do Unpaywall/OpenAlex; download lia de env var `UNPAYWALL_EMAIL`; o campo `akasha.unpaywall_email` não era lido nem exposto na UI. Migrado para config lida em runtime + campo em Settings |
+| [BUG-040](#bug-040) | FIXED | 2026-06-17 | AKASHA (tests/test_searxng_service.py) | `systemctl` chamado em import-time (decorator skipif) → `FileNotFoundError` no Windows aborta a COLEÇÃO do pytest inteira; testes de unit file sem guard de plataforma. `_systemctl` tolera ausência do binário + `pytestmark` pula o módulo sem systemd + `testpaths`/`norecursedirs` excluem o SearXNG vendorizado da coleção |
 
 ---
 
