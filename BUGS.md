@@ -102,6 +102,7 @@ Qual teste cobre o caso agora, ou por que não existe um.
 | [BUG-039](#bug-039) | FIXED | 2026-06-16 | AKASHA (services/paper_search.py, paper_download.py) | e-mail pessoal hardcoded (`jenmangelo@gmail.com`) para a API do Unpaywall/OpenAlex; download lia de env var `UNPAYWALL_EMAIL`; o campo `akasha.unpaywall_email` não era lido nem exposto na UI. Migrado para config lida em runtime + campo em Settings |
 | [BUG-040](#bug-040) | FIXED | 2026-06-17 | AKASHA (tests/test_searxng_service.py) | `systemctl` chamado em import-time (decorator skipif) → `FileNotFoundError` no Windows aborta a COLEÇÃO do pytest inteira; testes de unit file sem guard de plataforma. `_systemctl` tolera ausência do binário + `pytestmark` pula o módulo sem systemd + `testpaths`/`norecursedirs` excluem o SearXNG vendorizado da coleção |
 | [BUG-041](#bug-041) | FIXED | 2026-06-17 | KOSMOS (app/core/database.py) | banco pré-v3 (schema incompatível) no caminho do DB travava o KOSMOS na inicialização (`no such column: analysis_status`); `_ensure_columns` migrava só 1 coluna e rodava DEPOIS do `executescript`. Fix: migração roda ANTES e cobre todas as colunas novas (introspecção); banco de schema estrangeiro (sem `content_excerpt`) é arquivado em `.pre-v3.bak` e um v3 limpo é criado |
+| [BUG-042](#bug-042) | FIXED | 2026-06-17 | KOSMOS (iniciar.sh) | botão "Iniciar" do KOSMOS no HUB não fazia nada — `iniciar.sh` estava sem o bit de execução (`-rw-r--r--`); o HUB lança via `Command::new(exe_path)` que no Linux executa o arquivo direto (exige `+x`). `chmod +x` (git rastreia o modo) + teste de regressão |
 
 ---
 
@@ -2269,3 +2270,41 @@ Bloqueio total: o KOSMOS não inicia em nenhuma máquina que tenha um banco ante
 
 #### Teste de regressão
 `KOSMOS/tests/test_database.py::TestMigration` (3 testes): banco estrangeiro é arquivado em `.pre-v3.bak` + recriado v3; banco v3 antigo (sem `analysis_status`) é migrado **preservando os dados** e a query `WHERE analysis_status='pending'` passa a funcionar; banco v3 válido não é arquivado. Suíte KOSMOS: 560 passam. Validado em runtime: KOSMOS inicia (`MainWindow inicializada`) após arquivar o banco pré-v3.
+
+---
+
+### BUG-042 · [FIXED] · Botão "Iniciar" do KOSMOS no HUB não faz nada (iniciar.sh sem bit +x)
+
+#### Identificação
+- **Data:** 2026-06-17
+- **App(s):** KOSMOS / HUB
+- **Componente:** `KOSMOS/iniciar.sh` (permissão de arquivo)
+- **Commit do fix:** pendente
+- **Descoberta via:** uso real — clicar "Iniciar" no KOSMOS pelo HUB não abria nada
+- **Tempo de diagnóstico:** ~10 min
+
+#### Ambiente
+- **Máquina(s) afetadas:** CachyOS (e qualquer Linux que clone o repo com `iniciar.sh` sem `+x`)
+- **OS:** Linux
+- **Modo:** produção
+- **Reproduzível em:** qualquer Linux onde o `KOSMOS/iniciar.sh` esteja sem o bit de execução
+
+#### Pré-condição para reproduzir
+`KOSMOS/iniciar.sh` com modo `-rw-r--r--` (sem `+x`). Lançar o KOSMOS pelo botão "Iniciar" do HUB.
+
+#### Sintoma observado
+O botão não faz nada — nenhuma janela do KOSMOS aparece. (A AKASHA e a Mnemosyne abrem normalmente.)
+
+#### Causa raiz
+O HUB lança apps via `launcher.rs::launch_app` → `build_launch_command(exe_path)`. O `exe_path` do KOSMOS é `KOSMOS/iniciar.sh`. Só **no Windows** o `build_launch_command` embrulha `.sh` em `bash`; no **Linux** ele cai em `Command::new(exe_path)`, que executa o arquivo direto — e isso exige o **bit de execução**. O `iniciar.sh` do KOSMOS estava `-rw-r--r--` (sem `+x`), enquanto os da AKASHA/Mnemosyne estão `-rwxr-xr-x`. O `spawn` falhava silenciosamente do ponto de vista da usuária.
+
+#### Impacto
+Bloqueio total do lançamento do KOSMOS pelo HUB no Linux.
+
+#### Fix aplicado
+`chmod +x KOSMOS/iniciar.sh` (modo `100644` → `100755`). O git versiona o bit de modo, então a correção propaga para as outras máquinas no próximo pull. O arquivo já tinha o shebang `#!/usr/bin/env bash`, então a execução direta funciona.
+
+**Endurecimento opcional (não aplicado):** mover o tratamento de `.sh` via `bash` no `build_launch_command` para fora do `#[cfg(windows)]`, tornando o HUB resiliente a `.sh` sem `+x` em qualquer SO. Decisão da usuária (exige rebuild do HUB).
+
+#### Teste de regressão
+`KOSMOS/tests/test_launch.py` (3 testes): `iniciar.sh` existe, tem o bit de execução (`os.X_OK`) e tem shebang. Validado em runtime: `./KOSMOS/iniciar.sh` (execução direta, como o HUB faz) → `MainWindow inicializada`.
