@@ -410,6 +410,12 @@ export interface SearxngStatus {
   url:       string
 }
 
+export interface VendorStatus {
+  running:   boolean
+  reachable: boolean
+  url:       string
+}
+
 export interface ModuleCard {
   id: HubView
   label: string

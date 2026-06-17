@@ -5,7 +5,7 @@
 // ============================================================
 
 import { invoke as tauriInvoke } from '@tauri-apps/api/core'
-import type { AppError, TauriResult, EcosystemConfig, Project, Book, ArticleMeta, ArticleContent, OgmaProject, OgmaPage, LogosStatus, ModelInfo, ModelEntry, ModelAssignment, RecommendedModel, GitFileStatus, GitLogEntry, GitIncomingInfo, MemoryEntry, DomainEntry, TopicEntry, FinetuneState, SearxngStatus } from '../types'
+import type { AppError, TauriResult, EcosystemConfig, Project, Book, ArticleMeta, ArticleContent, OgmaProject, OgmaPage, LogosStatus, ModelInfo, ModelEntry, ModelAssignment, RecommendedModel, GitFileStatus, GitLogEntry, GitIncomingInfo, MemoryEntry, DomainEntry, TopicEntry, FinetuneState, SearxngStatus, VendorStatus } from '../types'
 
 async function call<T>(
   command: string,
@@ -438,3 +438,6 @@ export const searxngStart   = ():              Promise<TauriResult<void>>       
 export const searxngStop    = ():              Promise<TauriResult<void>>          => call<void>('searxng_stop')
 export const searxngGetUrl  = ():              Promise<TauriResult<string>>        => call<string>('searxng_get_url')
 export const searxngSetUrl  = (url: string):   Promise<TauriResult<void>>          => call<void>('searxng_set_url', { url })
+export const searxngVendorStatus = ():         Promise<TauriResult<VendorStatus>>  => call<VendorStatus>('searxng_vendor_status')
+export const searxngVendorStart  = ():         Promise<TauriResult<void>>          => call<void>('searxng_vendor_start')
+export const searxngVendorStop   = ():         Promise<TauriResult<void>>          => call<void>('searxng_vendor_stop')

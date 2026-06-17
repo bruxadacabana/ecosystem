@@ -150,6 +150,9 @@ pub fn run() {
             commands::searxng::searxng_stop,
             commands::searxng::searxng_get_url,
             commands::searxng::searxng_set_url,
+            commands::searxng::searxng_vendor_status,
+            commands::searxng::searxng_vendor_start,
+            commands::searxng::searxng_vendor_stop,
             commands::syncthing::syncthing_status,
             commands::syncthing::syncthing_start,
             commands::syncthing::syncthing_shutdown,
@@ -188,6 +191,12 @@ pub fn run() {
             let app_handle = app.handle().clone();
             tauri::async_runtime::spawn(async move {
                 logos::start_server(logos_state, app_handle).await;
+            });
+
+            // Watchdog do SearXNG vendorizado (3ª alternativa): sobe sob demanda
+            // quando o SearXNG remoto e o local estão fora; desliga quando voltam.
+            tauri::async_runtime::spawn(async move {
+                commands::searxng::vendor_watchdog().await;
             });
 
             // System tray — clique esquerdo mostra/oculta; direito abre menu

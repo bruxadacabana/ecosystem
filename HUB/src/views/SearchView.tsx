@@ -7,7 +7,7 @@
 import { useEffect, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import * as cmd from '../lib/tauri'
-import type { SearxngStatus } from '../types'
+import type { SearxngStatus, VendorStatus } from '../types'
 
 // ── Primitivos (mesmos da SyncView) ──────────────────────────
 
@@ -76,6 +76,11 @@ export function SearchView() {
   const [urlSaving, setUrlSaving] = useState(false)
   const [urlSaved,  setUrlSaved]  = useState(false)
 
+  // SearXNG vendorizado (3ª alternativa — gerenciado automaticamente pelo HUB)
+  const [vendor,   setVendor]   = useState<VendorStatus | null>(null)
+  const [vStarting, setVStarting] = useState(false)
+  const [vStopping, setVStopping] = useState(false)
+
   const runningRef = useRef(true)
 
   async function refresh() {
@@ -88,6 +93,22 @@ export function SearchView() {
     } else {
       setErr(res.error.message)
     }
+    const vres = await cmd.searxngVendorStatus()
+    if (runningRef.current && vres.ok) setVendor(vres.data)
+  }
+
+  async function handleVendorStart() {
+    setVStarting(true)
+    const res = await cmd.searxngVendorStart()
+    if (!res.ok) setErr(res.error.message)
+    setTimeout(async () => { await refresh(); setVStarting(false) }, 2500)
+  }
+
+  async function handleVendorStop() {
+    setVStopping(true)
+    const res = await cmd.searxngVendorStop()
+    if (!res.ok) setErr(res.error.message)
+    setTimeout(async () => { await refresh(); setVStopping(false) }, 1500)
   }
 
   useEffect(() => {
@@ -164,6 +185,15 @@ export function SearchView() {
     : active
     ? 'ativo mas sem resposta'
     : 'parado'
+
+  const vRunning   = vendor?.running   ?? false
+  const vReachable = vendor?.reachable ?? false
+  const vDot = !vendor
+    ? 'var(--ink-ghost)'
+    : vReachable ? '#4A6741' : vRunning ? '#b8860b' : 'var(--ink-ghost)'
+  const vLabel = !vendor
+    ? 'verificando…'
+    : vReachable ? 'rodando e acessível' : vRunning ? 'iniciando…' : 'parado (sobe sob demanda)'
 
   return (
     <div style={{
@@ -247,6 +277,32 @@ export function SearchView() {
         </p>
       </Card>
 
+      {/* SearXNG vendorizado — 3ª alternativa, gerenciado automaticamente */}
+      <Card>
+        <SecTitle label="SearXNG vendorizado (3ª alternativa)" />
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 }}>
+          <span style={{
+            width: 8, height: 8, borderRadius: '50%', flexShrink: 0,
+            background: vDot, opacity: vendor ? 1 : 0.4,
+          }} />
+          <span style={{ fontFamily: 'var(--font-mono)', fontSize: 12, color: 'var(--ink)', flex: 1 }}>
+            {vendor?.url ?? 'http://127.0.0.1:8889'} — {vLabel}
+          </span>
+          {vRunning
+            ? <Btn onClick={handleVendorStop}  disabled={vStopping}>{vStopping  ? 'parando…'   : 'Parar'}</Btn>
+            : <Btn onClick={handleVendorStart} disabled={vStarting}>{vStarting ? 'iniciando…' : 'Iniciar'}</Btn>
+          }
+        </div>
+        <p style={{
+          fontFamily: 'var(--font-mono)', fontSize: 9,
+          color: 'var(--ink-ghost)', opacity: 0.6, margin: 0, lineHeight: 1.6,
+        }}>
+          Empacotado no repositório (sem Docker). O HUB o sobe <b>automaticamente</b> só quando o
+          SearXNG remoto e o local estão fora, e o desliga quando um volta. Os botões acima são
+          override manual. Requer o setup (atualizar) ter criado o venv do vendor.
+        </p>
+      </Card>
+
       {/* Info */}
       <Card>
         <SecTitle label="Informações" />
@@ -254,11 +310,12 @@ export function SearchView() {
           fontFamily: 'var(--font-mono)', fontSize: 10,
           color: 'var(--ink-ghost)', lineHeight: 1.7,
         }}>
-          <div>Serviço systemd: <span style={{ color: 'var(--ink)' }}>searxng.service</span></div>
-          <div>Fallback de busca: <span style={{ color: 'var(--ink)' }}>DuckDuckGo</span></div>
+          <div>Fila de busca: <span style={{ color: 'var(--ink)' }}>remoto → local → vendorizado</span></div>
+          <div>Em paralelo: <span style={{ color: 'var(--ink)' }}>Marginalia</span> · último recurso: <span style={{ color: 'var(--ink)' }}>DuckDuckGo</span></div>
           <div style={{ marginTop: 6, opacity: 0.6, fontSize: 9 }}>
-            Start/Stop pode requerer permissão de administrador dependendo da configuração do sistema.
-            Se o botão falhar, use: <code>sudo systemctl start searxng</code>
+            O serviço remoto/local pode ser systemd ou Docker. O vendorizado é gerenciado pelo HUB
+            (sem systemd). A URL acima (1ª opção) é o <code>web_search_backend</code>; a 2ª opção
+            (<code>web_search_backend_fallback</code>) é configurada em Settings do AKASHA.
           </div>
         </div>
       </Card>
