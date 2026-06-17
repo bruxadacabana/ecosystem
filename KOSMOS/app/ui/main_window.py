@@ -55,6 +55,7 @@ from app.ui.views.analysis_tab import AnalysisTab
 from app.ui.views.article_list import ArticleList
 from app.ui.views.entity_view import EntityView
 from app.ui.views.investigation_view import InvestigationView
+from app.ui.views.stats_view import StatsView
 from app.ui.views.coverage_map import CoverageMap
 from app.ui.views.framing_view import FramingView
 from app.ui.views.alerts_view import AlertsView
@@ -122,6 +123,9 @@ class MainWindow(QMainWindow):
 
         self._alerts_view = AlertsView()
         self._analysis_tab.set_pane("alerts", self._alerts_view)
+
+        self._stats_view = StatsView()
+        self._analysis_tab.set_pane("stats", self._stats_view)
 
         tabs = QTabWidget()
         self._reading_tab_index = tabs.addTab(splitter, "Leitura")
@@ -206,6 +210,7 @@ class MainWindow(QMainWindow):
             self._coverage_map.reload()
             self._framing_view.reload()
             self._alerts_view.reload()
+            self._stats_view.load()
 
     def _open_article_from_analysis(self, article_id: int) -> None:
         """Clique num artigo de uma ferramenta de análise → abre na aba de Leitura."""

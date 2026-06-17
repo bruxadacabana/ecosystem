@@ -432,6 +432,12 @@ QLabel#reader_highlights_header {
     font-size: 12px;
     font-weight: bold;
 }
+QLabel#stats_bias_label {
+    color: #E8D9BE;
+    font-size: 13px;
+    font-weight: bold;
+    padding: 4px 0;
+}
 
 /* ── Sidebar header ───────────────────────────────────────────────────── */
 QLabel#sidebar_header {
