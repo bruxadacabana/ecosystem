@@ -44,6 +44,23 @@ if %errorlevel% neq 0 (
     )
 )
 
+REM ── SearXNG vendorizado (3a alternativa de busca -- sem Docker) ───────────────
+echo.
+echo [SearXNG vendor] setup (venv + settings)
+where uv >nul 2>&1
+if %errorlevel% neq 0 (
+    echo   ERRO: 'uv' nao encontrado
+    set /a ERROS+=1
+) else (
+    python "%ROOT%\AKASHA\vendor\setup_searxng_vendor.py"
+    if !errorlevel! neq 0 (
+        echo   ERRO: SearXNG vendorizado -- setup falhou
+        set /a ERROS+=1
+    ) else (
+        echo   OK: SearXNG vendorizado
+    )
+)
+
 REM ── Venv compartilhado (KOSMOS . Mnemosyne . Hermes) ─────────────────────────
 echo.
 echo [Python] Ambiente virtual compartilhado -- KOSMOS, Mnemosyne, Hermes

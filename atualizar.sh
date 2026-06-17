@@ -45,6 +45,18 @@ else
     fail "AKASHA — 'uv' não encontrado (instale: https://docs.astral.sh/uv/)"
 fi
 
+# ── SearXNG vendorizado (3ª alternativa de busca — sem Docker, Windows/Linux) ──
+header "SearXNG vendorizado — setup (venv + settings)"
+if command -v uv &>/dev/null; then
+    if python3 "$ROOT/AKASHA/vendor/setup_searxng_vendor.py"; then
+        ok "SearXNG vendorizado OK"
+    else
+        fail "SearXNG vendorizado — setup falhou"
+    fi
+else
+    fail "SearXNG vendorizado — 'uv' não encontrado"
+fi
+
 # ── Venv compartilhado (KOSMOS · Mnemosyne · Hermes) ─────────────────────────
 header "Ambiente virtual compartilhado — KOSMOS · Mnemosyne · Hermes"
 VENV="$ROOT/.venv"
