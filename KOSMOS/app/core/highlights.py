@@ -130,3 +130,66 @@ def delete_highlight(highlight_id: int, conn: sqlite3.Connection | None = None) 
     finally:
         if should_close:
             _conn.close()
+
+
+# ---------------------------------------------------------------------------
+# Exportação (Fase 8) — destaques de um feed ou de uma investigação, por tipo
+# ---------------------------------------------------------------------------
+
+def _highlights_query(where: str, param: int, conn: sqlite3.Connection | None) -> list[dict]:
+    _conn = conn if conn is not None else get_conn()
+    should_close = conn is None
+    try:
+        rows = _conn.execute(
+            f"""
+            SELECT h.text, h.note, h.highlight_type, a.title AS article_title, a.url
+              FROM highlights h
+              JOIN articles a ON a.id = h.article_id
+              {where}
+             ORDER BY h.highlight_type, a.published_at, h.id
+            """,
+            (param,),
+        ).fetchall()
+        return [dict(r) for r in rows]
+    except sqlite3.Error as exc:
+        log.error("Falha ao consultar destaques para exportação: %s", exc)
+        return []
+    finally:
+        if should_close:
+            _conn.close()
+
+
+def highlights_for_feed(feed_id: int, conn: sqlite3.Connection | None = None) -> list[dict]:
+    """Todos os destaques dos artigos de um feed (com título e url do artigo)."""
+    return _highlights_query("WHERE a.feed_id = ?", feed_id, conn)
+
+
+def highlights_for_investigation(inv_id: int, conn: sqlite3.Connection | None = None) -> list[dict]:
+    """Todos os destaques dos artigos de uma investigação."""
+    return _highlights_query(
+        "JOIN investigation_articles ia ON ia.article_id = a.id WHERE ia.investigation_id = ?",
+        inv_id, conn,
+    )
+
+
+def export_highlights_md(highlights: list[dict], title: str) -> str:
+    """Monta o `.md` dos destaques agrupados por tipo (citação, dado, etc.)."""
+    by_type: dict[str, list[dict]] = {}
+    for h in highlights:
+        by_type.setdefault(h.get("highlight_type") or "generic", []).append(h)
+
+    lines = [f"# Destaques — {title}", "", f"_{len(highlights)} destaque(s)._", ""]
+    for t in ("citation", "question", "fact", "contradiction", "generic"):
+        group = by_type.get(t)
+        if not group:
+            continue
+        lines += [f"## {TYPE_LABELS[t]}", ""]
+        for h in group:
+            text = (h.get("text") or "").strip()
+            entry = f'- "{text}" — *{h.get("article_title", "")}*'
+            note = (h.get("note") or "").strip()
+            if note:
+                entry += f"  \n  Nota: {note}"
+            lines.append(entry)
+        lines.append("")
+    return "\n".join(lines).rstrip() + "\n"

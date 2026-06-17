@@ -52,7 +52,9 @@ def view(qapp, tmp_path):
     conn = _open_db(db_file)
     fid = conn.execute("INSERT INTO feeds (url, title) VALUES (?, ?)", ("https://f.com/rss", "Feed")).lastrowid
     conn.commit()
-    with patch.object(inv_mod, "get_conn", lambda: _open_db(db_file)):
+    import app.core.highlights as hl_mod
+    with patch.object(inv_mod, "get_conn", lambda: _open_db(db_file)), \
+         patch.object(hl_mod, "get_conn", lambda: _open_db(db_file)):
         v = InvestigationView()
         yield v, conn, fid, tmp_path
     conn.close()
@@ -148,6 +150,21 @@ def test_export_to_writes_file(view):
     assert v.export_to(str(out)) is True
     text = out.read_text(encoding="utf-8")
     assert "# Dossiê" in text and "### Fato" in text
+
+
+def test_export_highlights_to_writes_file(view):
+    from app.core.highlights import add_highlight
+    v, conn, fid, tmp = view
+    inv = create_investigation("Caso", conn=conn)
+    aid = _article(conn, fid, title="Artigo")
+    add_article(inv, aid, conn=conn)
+    add_highlight(aid, "trecho marcado", "citation", conn=conn)
+    v.load_investigations()
+    v.show_investigation(inv)
+    out = tmp / "destaques.md"
+    assert v.export_highlights_to(str(out)) is True
+    text = out.read_text(encoding="utf-8")
+    assert "## Citação" in text and "trecho marcado" in text
 
 
 def test_double_click_emits_article_selected(view):

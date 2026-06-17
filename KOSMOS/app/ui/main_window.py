@@ -30,10 +30,12 @@ Conexões de sinais:
 from __future__ import annotations
 
 import logging
+from pathlib import Path
 
 from PySide6.QtCore import Qt, QTimer
 from PySide6.QtGui import QCloseEvent, QCursor
 from PySide6.QtWidgets import (
+    QFileDialog,
     QInputDialog,
     QMainWindow,
     QMenu,
@@ -47,6 +49,7 @@ from app.core.analysis_worker import AnalysisWorker
 from app.core.fetch_worker import FetchWorker
 from app.core.scraper_worker import ScraperWorker
 from app.core.translation_worker import TranslationWorker
+from app.core.highlights import export_highlights_md, highlights_for_feed
 from app.core.investigations import add_article, create_investigation, list_investigations
 from app.ui.views.analysis_tab import AnalysisTab
 from app.ui.views.article_list import ArticleList
@@ -138,6 +141,8 @@ class MainWindow(QMainWindow):
         # "Adicionar à investigação" — leitor e menu de contexto do card.
         self._reader.add_to_investigation_requested.connect(self._on_add_to_investigation)
         self._article_list.add_to_investigation_requested.connect(self._on_add_to_investigation)
+        # Exportar destaques de um feed (menu de contexto na sidebar).
+        self._sidebar.export_highlights_requested.connect(self._on_export_feed_highlights)
 
     def _start_worker(self) -> None:
         self._worker = FetchWorker(self)
@@ -231,6 +236,26 @@ class MainWindow(QMainWindow):
         add_article(int(inv_id), article_id)
         self.statusBar().showMessage("Artigo adicionado à investigação.", 3000)
         self._investigation_view.load_investigations()
+
+    def _on_export_feed_highlights(self, feed_id: int) -> None:
+        """Exporta os destaques de um feed como .md (menu de contexto da sidebar)."""
+        hs = highlights_for_feed(feed_id)
+        if not hs:
+            self.statusBar().showMessage("Este feed ainda não tem destaques.", 3000)
+            return
+        path, _ = QFileDialog.getSaveFileName(
+            self, "Exportar destaques", f"destaques-feed-{feed_id}.md", "Markdown (*.md)"
+        )
+        if not path:
+            return
+        md = export_highlights_md(hs, f"Feed {feed_id}")
+        try:
+            Path(path).write_text(md, encoding="utf-8")
+            self.statusBar().showMessage("Destaques exportados.", 3000)
+            log.info("Destaques do feed %d exportados para %s.", feed_id, path)
+        except OSError as exc:
+            log.error("Falha ao exportar destaques do feed %d: %s", feed_id, exc)
+            self.statusBar().showMessage("Falha ao exportar destaques.", 4000)
 
     # ------------------------------------------------------------------
     # Slots

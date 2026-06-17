@@ -17,6 +17,7 @@ import sqlite3
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
     QLabel,
+    QMenu,
     QTreeWidget,
     QTreeWidgetItem,
     QVBoxLayout,
@@ -34,6 +35,7 @@ class FeedSidebar(QWidget):
     """Painel lateral: árvore de feeds por categoria, com contadores de não-lidos."""
 
     feed_selected = Signal(int)  # feed_id ou ALL_FEEDS_ID
+    export_highlights_requested = Signal(int)  # feed_id — exportar destaques do feed (menu de contexto)
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -59,6 +61,8 @@ class FeedSidebar(QWidget):
         self._tree.setExpandsOnDoubleClick(False)
         self._tree.setIndentation(16)
         self._tree.itemClicked.connect(self._on_item_clicked)
+        self._tree.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self._tree.customContextMenuRequested.connect(self._on_context_menu)
         layout.addWidget(self._tree)
 
     # ------------------------------------------------------------------
@@ -147,6 +151,25 @@ class FeedSidebar(QWidget):
             return  # clique em categoria — ignora
         log.debug("Feed selecionado: id=%s", feed_id)
         self.feed_selected.emit(feed_id)
+
+    def _on_context_menu(self, pos) -> None:
+        """Menu de contexto num feed: 'Exportar destaques deste feed' → emite o sinal."""
+        item = self._tree.itemAt(pos)
+        if item is None:
+            return
+        feed_id = item.data(0, Qt.ItemDataRole.UserRole)
+        if feed_id is None or feed_id == ALL_FEEDS_ID:
+            return  # categoria ou "Todos" — sem exportação por feed
+        menu = QMenu(self)
+        act = menu.addAction("Exportar destaques deste feed…")
+        if menu.exec(self._tree.viewport().mapToGlobal(pos)) is act:
+            self._request_export_highlights(item)
+
+    def _request_export_highlights(self, item: QTreeWidgetItem) -> None:
+        """Resolve o feed_id do item e emite o sinal (separado do exec, testável)."""
+        feed_id = item.data(0, Qt.ItemDataRole.UserRole)
+        if feed_id is not None and feed_id != ALL_FEEDS_ID:
+            self.export_highlights_requested.emit(int(feed_id))
 
 
 # ------------------------------------------------------------------

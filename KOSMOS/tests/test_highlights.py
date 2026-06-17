@@ -17,6 +17,9 @@ import pytest
 from app.core.highlights import (
     add_highlight,
     delete_highlight,
+    export_highlights_md,
+    highlights_for_feed,
+    highlights_for_investigation,
     list_highlights,
     set_highlight_type,
     update_highlight_note,
@@ -101,3 +104,46 @@ def test_delete(db):
     hid = add_highlight(aid, "x", "fact", conn=conn)
     assert delete_highlight(hid, conn=conn) is True
     assert list_highlights(aid, conn=conn) == []
+
+
+# ---------------------------------------------------------------------------
+# Exportação (item 2)
+# ---------------------------------------------------------------------------
+
+class TestExport:
+    def test_for_feed_and_md_structure(self, db):
+        conn, aid = db
+        fid = conn.execute("SELECT feed_id FROM articles WHERE id=?", (aid,)).fetchone()[0]
+        add_highlight(aid, "uma citação", "citation", note="importante", conn=conn)
+        add_highlight(aid, "um dado", "fact", conn=conn)
+        hs = highlights_for_feed(fid, conn=conn)
+        assert len(hs) == 2
+        md = export_highlights_md(hs, "Meu Feed")
+        assert md.startswith("# Destaques — Meu Feed")
+        assert "## Citação" in md and "uma citação" in md
+        assert "## Dado verificável" in md and "um dado" in md
+        assert "Nota: importante" in md
+
+    def test_for_investigation(self, db):
+        conn, aid = db
+        inv = conn.execute("INSERT INTO investigations (name) VALUES ('Caso')").lastrowid
+        conn.execute("INSERT INTO investigation_articles (investigation_id, article_id) VALUES (?, ?)", (inv, aid))
+        conn.commit()
+        add_highlight(aid, "trecho da pasta", "question", conn=conn)
+        hs = highlights_for_investigation(inv, conn=conn)
+        assert len(hs) == 1 and hs[0]["text"] == "trecho da pasta"
+
+    def test_groups_by_type(self, db):
+        conn, aid = db
+        fid = conn.execute("SELECT feed_id FROM articles WHERE id=?", (aid,)).fetchone()[0]
+        add_highlight(aid, "c1", "citation", conn=conn)
+        add_highlight(aid, "c2", "citation", conn=conn)
+        add_highlight(aid, "contra", "contradiction", conn=conn)
+        md = export_highlights_md(highlights_for_feed(fid, conn=conn), "F")
+        assert md.count("## Citação") == 1   # agrupado, não repetido
+        assert "c1" in md and "c2" in md and "## Contradição" in md
+
+    def test_empty_export(self):
+        md = export_highlights_md([], "Vazio")
+        assert md.startswith("# Destaques — Vazio")
+        assert "0 destaque(s)" in md

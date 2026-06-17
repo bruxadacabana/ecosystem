@@ -32,6 +32,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from app.core.highlights import export_highlights_md, highlights_for_investigation
 from app.core.investigations import (
     add_article,
     create_investigation,
@@ -108,6 +109,9 @@ class InvestigationView(QWidget):
         self._export_btn = QPushButton("Exportar dossiê .md")
         self._export_btn.clicked.connect(self._on_export)
         row.addWidget(self._export_btn)
+        self._export_hl_btn = QPushButton("Exportar destaques .md")
+        self._export_hl_btn.clicked.connect(self._on_export_highlights)
+        row.addWidget(self._export_hl_btn)
         row.addStretch(1)
         right.addLayout(row)
 
@@ -278,7 +282,29 @@ class InvestigationView(QWidget):
             log.error("Falha ao exportar dossiê para %s: %s", path, exc)
             return False
 
+    def _on_export_highlights(self) -> None:
+        if self._current_inv_id is None:
+            return
+        suggested = "destaques-" + (self._header.text() or "investigacao").replace("/", "-") + ".md"
+        path, _ = QFileDialog.getSaveFileName(self, "Exportar destaques", suggested, "Markdown (*.md)")
+        if path:
+            self.export_highlights_to(path)
+
+    def export_highlights_to(self, path: str) -> bool:
+        """Escreve os destaques da investigação em `path` (testável, sem diálogo)."""
+        if self._current_inv_id is None:
+            return False
+        hs = highlights_for_investigation(self._current_inv_id)
+        md = export_highlights_md(hs, self._header.text() or "Investigação")
+        try:
+            Path(path).write_text(md, encoding="utf-8")
+            log.info("Destaques da investigação %d exportados para %s.", self._current_inv_id, path)
+            return True
+        except OSError as exc:
+            log.error("Falha ao exportar destaques para %s: %s", path, exc)
+            return False
+
     def _set_detail_visible(self, visible: bool) -> None:
-        for w in (self._desc_edit, self._desc_btn, self._export_btn, self._articles,
-                  self._note_edit, self._note_btn, self._remove_btn):
+        for w in (self._desc_edit, self._desc_btn, self._export_btn, self._export_hl_btn,
+                  self._articles, self._note_edit, self._note_btn, self._remove_btn):
             w.setVisible(visible)
