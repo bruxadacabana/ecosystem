@@ -28,7 +28,12 @@ from html import escape
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
     QFrame,
+    QHBoxLayout,
     QLabel,
+    QListWidget,
+    QListWidgetItem,
+    QMenu,
+    QPlainTextEdit,
     QPushButton,
     QScrollArea,
     QSizePolicy,
@@ -37,11 +42,66 @@ from PySide6.QtWidgets import (
 )
 
 from app.core.database import get_conn
+from app.core.highlights import (
+    TYPE_LABELS,
+    VALID_TYPES,
+    add_highlight,
+    delete_highlight,
+    list_highlights,
+    update_highlight_note,
+)
 
 log = logging.getLogger("kosmos.reader_pane")
 
 _FIVE_WS_LABELS = (("quem", "Quem"), ("o_que", "O quê"), ("quando", "Quando"),
                    ("onde", "Onde"), ("por_que", "Por quê"))
+
+# Cor de fundo do trecho destacado no corpo, por tipo (coloração inline).
+_TYPE_BG = {
+    "citation": "#5C5020",       # âmbar
+    "question": "#2E3A4A",       # azul
+    "fact": "#2E4A35",           # verde
+    "contradiction": "#5A2E2E",  # vermelho
+    "generic": "#3D3226",        # neutro
+}
+# Ordem dos tipos no menu de contexto (exclui 'generic', que é só fallback).
+_MARK_TYPES = ("citation", "question", "fact", "contradiction")
+
+
+def _body_html(text: str, highlights: list[dict]) -> str:
+    """Escapa o corpo e envolve cada trecho destacado num span colorido por tipo.
+
+    Reserva faixas **não-sobrepostas** no texto original (mais longas primeiro) e
+    monta o HTML numa passada só — sem spans aninhados nem corrupção. Fragmento que
+    não casar (formatação/duplicata/tradução) é ignorado na coloração; o destaque
+    continua acessível na lista 'Meus destaques'.
+    """
+    text = text or ""
+    occupied = [False] * len(text)
+    claimed: list[tuple[int, int, str]] = []
+    for h in sorted(highlights or [], key=lambda x: len(x.get("text") or ""), reverse=True):
+        frag = (h.get("text") or "").strip()
+        if not frag:
+            continue
+        idx = text.find(frag)
+        while idx != -1 and any(occupied[idx:idx + len(frag)]):
+            idx = text.find(frag, idx + 1)
+        if idx == -1:
+            continue
+        for i in range(idx, idx + len(frag)):
+            occupied[i] = True
+        claimed.append((idx, idx + len(frag), h.get("highlight_type") or "generic"))
+
+    claimed.sort()
+    out: list[str] = []
+    pos = 0
+    for start, end, htype in claimed:
+        out.append(escape(text[pos:start]))
+        color = _TYPE_BG.get(htype, _TYPE_BG["generic"])
+        out.append(f'<span style="background-color:{color}">{escape(text[start:end])}</span>')
+        pos = end
+    out.append(escape(text[pos:]))
+    return "".join(out).replace("\n", "<br>")
 
 
 def _parse_analysis(data: dict) -> dict:
@@ -157,6 +217,8 @@ class ReaderPane(QWidget):
         self._orig_body: str = ""              # corpo no idioma original (content_text/excerpt)
         self._translated_body: str = ""        # corpo traduzido (content_text_translated)
         self._showing_translation: bool = False
+        self._current_highlights: list[dict] = []  # destaques do artigo atual (Fase 8)
+        self._current_highlight_id: int | None = None
         self._setup_ui()
         log.debug("ReaderPane inicializada.")
 
@@ -226,6 +288,10 @@ class ReaderPane(QWidget):
         self._body_lbl.setSizePolicy(
             QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding
         )
+        # Seleção de trecho + menu de contexto para criar destaques (Fase 8).
+        self._body_lbl.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+        self._body_lbl.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self._body_lbl.customContextMenuRequested.connect(self._on_body_context_menu)
         self._layout.addWidget(self._body_lbl)
 
         # Botão para carregar o texto completo (scraping P1, sob demanda)
@@ -257,6 +323,36 @@ class ReaderPane(QWidget):
         self._investigation_btn.clicked.connect(self._on_add_to_investigation)
         self._layout.addSpacing(8)
         self._layout.addWidget(self._investigation_btn, alignment=Qt.AlignmentFlag.AlignLeft)
+
+        # Seção "Meus destaques" (Fase 8) — lista dos highlights do artigo + nota/remover.
+        self._layout.addSpacing(20)
+        self._highlights_header = QLabel("Meus destaques")
+        self._highlights_header.setObjectName("reader_highlights_header")
+        self._layout.addWidget(self._highlights_header)
+        self._highlights_list = QListWidget()
+        self._highlights_list.setObjectName("reader_highlights_list")
+        self._highlights_list.setMaximumHeight(140)
+        self._highlights_list.currentRowChanged.connect(self._on_highlight_selected)
+        self._layout.addWidget(self._highlights_list)
+
+        self._highlight_detail = QWidget()
+        hd = QVBoxLayout(self._highlight_detail)
+        hd.setContentsMargins(0, 4, 0, 0)
+        self._highlight_note_edit = QPlainTextEdit()
+        self._highlight_note_edit.setObjectName("reader_highlight_note")
+        self._highlight_note_edit.setMaximumHeight(56)
+        self._highlight_note_edit.setPlaceholderText("Nota deste destaque…")
+        hd.addWidget(self._highlight_note_edit)
+        hrow = QHBoxLayout()
+        self._highlight_note_btn = QPushButton("Salvar nota")
+        self._highlight_note_btn.clicked.connect(self._on_save_highlight_note)
+        hrow.addWidget(self._highlight_note_btn)
+        self._highlight_remove_btn = QPushButton("Remover destaque")
+        self._highlight_remove_btn.clicked.connect(self._on_remove_highlight)
+        hrow.addWidget(self._highlight_remove_btn)
+        hrow.addStretch(1)
+        hd.addLayout(hrow)
+        self._layout.addWidget(self._highlight_detail)
 
         self._layout.addStretch()
         self._set_content_visible(False)
@@ -311,6 +407,7 @@ class ReaderPane(QWidget):
 
         self._current_article_id = article_id
         self._current_url = row["url"] or ""
+        self._current_highlights = list_highlights(article_id, conn=_conn)
         self._render(dict(row))
 
         # Marca como lido (usa a mesma conn se ainda aberta, ou abre nova)
@@ -337,6 +434,8 @@ class ReaderPane(QWidget):
         self._orig_body = ""
         self._translated_body = ""
         self._showing_translation = False
+        self._current_highlights = []
+        self._current_highlight_id = None
         self._set_content_visible(False)
         self._placeholder.show()
 
@@ -379,6 +478,7 @@ class ReaderPane(QWidget):
         )
         self._refresh_translation_ui()
         self._render_analysis(_parse_analysis(data))
+        self._populate_highlights_panel()
 
         log.debug("Artigo renderizado: id=%d título='%s'", data["id"], data.get("title", ""))
 
@@ -390,14 +490,14 @@ class ReaderPane(QWidget):
         """
         if content_text:
             # Texto completo já disponível — exibe e oculta o botão.
-            self._body_lbl.setText(content_text)
+            self._apply_body(content_text, is_original=True)
             self._body_lbl.show()
             self._fulltext_btn.hide()
             self._fulltext_status.hide()
             return
 
         # Sem texto completo — mostra o excerpt do feed (se houver)
-        self._body_lbl.setText(excerpt)
+        self._apply_body(excerpt, is_original=True)
         self._body_lbl.setVisible(bool(excerpt))
 
         if is_scraped == -1:
@@ -475,10 +575,10 @@ class ReaderPane(QWidget):
         if self._translated_body:
             # Tradução disponível → botão alterna original/tradução
             if self._showing_translation:
-                self._body_lbl.setText(self._translated_body)
+                self._apply_body(self._translated_body, is_original=False)
                 self._translate_btn.setText("Ver original")
             else:
-                self._body_lbl.setText(self._orig_body)
+                self._apply_body(self._orig_body, is_original=True)
                 self._translate_btn.setText("Ver tradução")
             self._body_lbl.setVisible(bool(self._body_lbl.text()))
             self._translate_btn.setEnabled(True)
@@ -595,6 +695,103 @@ class ReaderPane(QWidget):
         if self._current_article_id is not None:
             self.add_to_investigation_requested.emit(self._current_article_id)
 
+    # ------------------------------------------------------------------
+    # Destaques / anotações (Fase 8)
+    # ------------------------------------------------------------------
+
+    def _apply_body(self, text: str, is_original: bool) -> None:
+        """Define o corpo; aplica a coloração inline dos destaques só no texto original."""
+        if is_original and self._current_highlights:
+            self._body_lbl.setTextFormat(Qt.TextFormat.RichText)
+            self._body_lbl.setText(_body_html(text, self._current_highlights))
+        else:
+            self._body_lbl.setTextFormat(Qt.TextFormat.PlainText)
+            self._body_lbl.setText(text or "")
+
+    def _repaint_body(self) -> None:
+        """Re-renderiza o corpo atual (após criar/remover destaque)."""
+        if self._showing_translation and self._translated_body:
+            self._apply_body(self._translated_body, is_original=False)
+        else:
+            self._apply_body(self._orig_body, is_original=True)
+
+    def _on_body_context_menu(self, pos) -> None:
+        """Menu de contexto no corpo: marca o trecho selecionado como um tipo de destaque."""
+        if self._current_article_id is None:
+            return
+        sel = self._body_lbl.selectedText().strip()
+        if not sel:
+            return
+        sel = sel.replace(" ", "\n").replace(" ", "\n")
+        start = self._body_lbl.selectionStart()
+        menu = QMenu(self)
+        sub = menu.addMenu("Marcar como")
+        for t in _MARK_TYPES:
+            act = sub.addAction(TYPE_LABELS[t])
+            act.setData(t)
+        chosen = menu.exec(self._body_lbl.mapToGlobal(pos))
+        if chosen is not None and chosen.data() in VALID_TYPES:
+            self._create_highlight(sel, chosen.data(), position_hint=start)
+
+    def _create_highlight(self, text: str, htype: str, position_hint=None) -> None:
+        """Cria um destaque do artigo atual e atualiza corpo + painel (separado do menu, testável)."""
+        if self._current_article_id is None:
+            return
+        add_highlight(self._current_article_id, text, htype, position_hint=position_hint)
+        log.info("Destaque criado no artigo %d (tipo=%s).", self._current_article_id, htype)
+        self._reload_highlights()
+
+    def _reload_highlights(self, conn: sqlite3.Connection | None = None) -> None:
+        """Recarrega os destaques do artigo atual e repinta corpo + painel."""
+        if self._current_article_id is None:
+            return
+        self._current_highlights = list_highlights(self._current_article_id, conn=conn)
+        self._repaint_body()
+        self._populate_highlights_panel()
+
+    def _populate_highlights_panel(self) -> None:
+        self._highlights_list.blockSignals(True)
+        self._highlights_list.clear()
+        for h in self._current_highlights:
+            label = TYPE_LABELS.get(h["highlight_type"], "Destaque")
+            txt = h.get("text") or ""
+            snippet = txt[:70] + ("…" if len(txt) > 70 else "")
+            mark = " ✎" if (h.get("note") or "").strip() else ""
+            item = QListWidgetItem(f"[{label}] {snippet}{mark}")
+            item.setData(Qt.ItemDataRole.UserRole, h["id"])
+            self._highlights_list.addItem(item)
+        self._highlights_list.blockSignals(False)
+        self._current_highlight_id = None
+        self._highlight_detail.setVisible(False)
+        n = len(self._current_highlights)
+        self._highlights_header.setText("Meus destaques" if n else "Meus destaques (nenhum ainda)")
+
+    def _on_highlight_selected(self, row: int) -> None:
+        if row < 0 or row >= len(self._current_highlights):
+            self._highlight_detail.setVisible(False)
+            return
+        item = self._highlights_list.item(row)
+        hid = item.data(Qt.ItemDataRole.UserRole) if item is not None else None
+        if hid is None:
+            return
+        self._current_highlight_id = int(hid)
+        h = next((x for x in self._current_highlights if x["id"] == self._current_highlight_id), None)
+        self._highlight_note_edit.setPlainText((h or {}).get("note") or "")
+        self._highlight_detail.setVisible(True)
+
+    def _on_save_highlight_note(self) -> None:
+        if self._current_highlight_id is None:
+            return
+        update_highlight_note(self._current_highlight_id, self._highlight_note_edit.toPlainText())
+        self._reload_highlights()
+
+    def _on_remove_highlight(self) -> None:
+        if self._current_highlight_id is None:
+            return
+        delete_highlight(self._current_highlight_id)
+        log.info("Destaque %d removido.", self._current_highlight_id)
+        self._reload_highlights()
+
     def _set_content_visible(self, visible: bool) -> None:
         for widget in (
             self._title_lbl,
@@ -607,5 +804,9 @@ class ReaderPane(QWidget):
             self._fulltext_status,
             self._translate_btn,
             self._investigation_btn,
+            self._highlights_header,
+            self._highlights_list,
         ):
             widget.setVisible(visible)
+        if not visible:
+            self._highlight_detail.setVisible(False)

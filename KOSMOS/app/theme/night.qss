@@ -427,6 +427,11 @@ QLabel#reader_analysis {
     border-radius: 4px;
     padding: 8px 10px;
 }
+QLabel#reader_highlights_header {
+    color: #A08860;
+    font-size: 12px;
+    font-weight: bold;
+}
 
 /* ── Sidebar header ───────────────────────────────────────────────────── */
 QLabel#sidebar_header {
