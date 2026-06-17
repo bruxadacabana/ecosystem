@@ -686,3 +686,66 @@ class TestGetConn:
         with patch.object(db_module, "DB_PATH", bad_path):
             with pytest.raises(sqlite3.OperationalError):
                 db_module.get_conn()
+
+
+def _make_foreign_db(path: Path) -> None:
+    """Banco de schema pré-v3 (incompatível): articles SEM content_excerpt."""
+    conn = sqlite3.connect(str(path))
+    conn.executescript(
+        "CREATE TABLE feeds (id INTEGER PRIMARY KEY, name TEXT, url TEXT);"
+        "CREATE TABLE articles (id INTEGER PRIMARY KEY, feed_id INTEGER, guid TEXT, "
+        "title TEXT, content_full TEXT, extra_json TEXT);"
+    )
+    conn.commit()
+    conn.close()
+
+
+def _make_old_v3_db(path: Path) -> None:
+    """Banco v3 antigo (Fase 1-3): tem content_excerpt mas NÃO tem analysis_status/ai_*."""
+    conn = sqlite3.connect(str(path))
+    conn.executescript(
+        "CREATE TABLE feeds (id INTEGER PRIMARY KEY AUTOINCREMENT, url TEXT NOT NULL UNIQUE, "
+        "title TEXT, category TEXT NOT NULL DEFAULT 'Sem categoria');"
+        "CREATE TABLE articles (id INTEGER PRIMARY KEY AUTOINCREMENT, feed_id INTEGER NOT NULL, "
+        "url TEXT NOT NULL UNIQUE, title TEXT NOT NULL, content_excerpt TEXT, published_at TEXT, "
+        "author TEXT, created_at TEXT);"
+    )
+    conn.execute("INSERT INTO feeds (url, title) VALUES ('http://f', 'F')")
+    conn.execute("INSERT INTO articles (feed_id, url, title) VALUES (1, 'http://a', 'Velho')")
+    conn.commit()
+    conn.close()
+
+
+class TestMigration:
+    """BUG-041: banco pré-v3 incompatível travava o KOSMOS na inicialização."""
+
+    def test_foreign_db_is_archived_and_recreated(self, tmp_path):
+        db = tmp_path / "kosmos.db"
+        _make_foreign_db(db)
+        _init_db_at(db)   # não deve levantar
+        assert (tmp_path / "kosmos.db.pre-v3.bak").exists()   # antigo arquivado, não apagado
+        conn = _open_db(db)
+        cols = {r[1] for r in conn.execute("PRAGMA table_info(articles)")}
+        assert "content_excerpt" in cols and "analysis_status" in cols   # schema v3 novo
+        conn.close()
+
+    def test_old_v3_db_migrated_preserving_data(self, tmp_path):
+        db = tmp_path / "kosmos.db"
+        _make_old_v3_db(db)
+        _init_db_at(db)   # migra in-place, NÃO arquiva
+        assert not (tmp_path / "kosmos.db.pre-v3.bak").exists()
+        conn = _open_db(db)
+        cols = {r[1] for r in conn.execute("PRAGMA table_info(articles)")}
+        assert "analysis_status" in cols and "ai_tags" in cols and "content_text" in cols
+        # dados preservados
+        assert conn.execute("SELECT title FROM articles").fetchone()[0] == "Velho"
+        assert conn.execute("SELECT title FROM feeds").fetchone()[0] == "F"
+        # a query que antes quebrava agora funciona
+        conn.execute("SELECT id FROM articles WHERE analysis_status = 'pending'").fetchall()
+        conn.close()
+
+    def test_fresh_v3_db_not_archived(self, tmp_path):
+        db = tmp_path / "kosmos.db"
+        _init_db_at(db)
+        _init_db_at(db)   # idempotente; banco v3 válido não é arquivado
+        assert not (tmp_path / "kosmos.db.pre-v3.bak").exists()

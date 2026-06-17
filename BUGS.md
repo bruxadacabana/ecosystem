@@ -101,6 +101,7 @@ Qual teste cobre o caso agora, ou por que não existe um.
 | [BUG-038](#bug-038) | FIXED | 2026-06-11 | KOSMOS (app/utils/paths.py) | logs do KOSMOS não aparecem na aba Monitor do HUB — gravados em caminho local, fora de `{sync_root}/kosmos/kosmos.log` que o HUB lê |
 | [BUG-039](#bug-039) | FIXED | 2026-06-16 | AKASHA (services/paper_search.py, paper_download.py) | e-mail pessoal hardcoded (`jenmangelo@gmail.com`) para a API do Unpaywall/OpenAlex; download lia de env var `UNPAYWALL_EMAIL`; o campo `akasha.unpaywall_email` não era lido nem exposto na UI. Migrado para config lida em runtime + campo em Settings |
 | [BUG-040](#bug-040) | FIXED | 2026-06-17 | AKASHA (tests/test_searxng_service.py) | `systemctl` chamado em import-time (decorator skipif) → `FileNotFoundError` no Windows aborta a COLEÇÃO do pytest inteira; testes de unit file sem guard de plataforma. `_systemctl` tolera ausência do binário + `pytestmark` pula o módulo sem systemd + `testpaths`/`norecursedirs` excluem o SearXNG vendorizado da coleção |
+| [BUG-041](#bug-041) | FIXED | 2026-06-17 | KOSMOS (app/core/database.py) | banco pré-v3 (schema incompatível) no caminho do DB travava o KOSMOS na inicialização (`no such column: analysis_status`); `_ensure_columns` migrava só 1 coluna e rodava DEPOIS do `executescript`. Fix: migração roda ANTES e cobre todas as colunas novas (introspecção); banco de schema estrangeiro (sem `content_excerpt`) é arquivado em `.pre-v3.bak` e um v3 limpo é criado |
 
 ---
 
@@ -2222,3 +2223,49 @@ abortava. Não afeta runtime do app.
 `pytest --collect-only` no Windows: **1378 testes coletados, 0 erros**, **0**
 ocorrências de `vendor/searxng`. `pytest tests/test_searxng_service.py`:
 **15 skipped** (nenhuma falha) fora do Linux.
+
+---
+
+### BUG-041 · [FIXED] · Banco pré-v3 incompatível trava o KOSMOS na inicialização
+
+#### Identificação
+- **Data:** 2026-06-17
+- **App(s):** KOSMOS
+- **Componente:** `app/core/database.py` (`init_db`, `_ensure_columns`)
+- **Commit do fix:** pendente
+- **Descoberta via:** uso real — a usuária não conseguia abrir o KOSMOS pelo HUB
+- **Tempo de diagnóstico:** ~15 min
+
+#### Ambiente
+- **Máquina(s) afetadas:** PC principal (CachyOS); qualquer máquina com um banco KOSMOS anterior ao redesign v3
+- **OS:** CachyOS
+- **Hardware relevante:** n/a
+- **Modo:** produção
+- **Reproduzível em:** qualquer máquina cujo `DB_PATH` aponte para um banco de schema antigo/estrangeiro
+
+#### Pré-condição para reproduzir
+Existir um `kosmos.db` no caminho do banco (`~/.local/share/kosmos/kosmos.db`) criado por uma versão anterior ao KOSMOS v3 (replanejado em 2026-06-01) — schema incompatível, sem as colunas da Fase 4 (`analysis_status`, `ai_*`).
+
+#### Sintoma observado
+KOSMOS não abre pelo HUB. No log:
+```
+CRITICAL kosmos.database: Falha ao inicializar banco: no such column: analysis_status
+CRITICAL kosmos: Falha ao inicializar banco de dados: no such column: analysis_status
+```
+
+#### Causa raiz
+Dois defeitos somados em `init_db`:
+1. **Ordem errada:** `_ensure_columns` (migração via ALTER) rodava **depois** de `conn.executescript(_DDL)`. O `_DDL` cria o índice `idx_articles_pending_analysis ... WHERE analysis_status IN (...)`; como a tabela `articles` já existia (de um schema antigo) sem a coluna, o `CREATE INDEX` abortava a inicialização inteira antes da migração rodar.
+2. **Migração incompleta:** `_ensure_columns` adicionava só `content_text_translated` — faltavam todas as colunas das Fases 3-8.
+
+Além disso, o banco encontrado era **pré-v3** (encarnação antiga do KOSMOS: tabelas com `guid`/`content_full`/`relevance_score`/`extra_json`, `categories`/`tags`/`read_sessions`), de schema fundamentalmente incompatível — não migrável coluna-a-coluna.
+
+#### Impacto
+Bloqueio total: o KOSMOS não inicia em nenhuma máquina que tenha um banco anterior no caminho. (No caso observado o banco estava vazio — 0 linhas em todas as tabelas.)
+
+#### Fix aplicado
+- `_ensure_columns` movida para **antes** do `executescript`, e reescrita para cobrir **todas** as colunas novas de `feeds`/`articles` via introspecção (`PRAGMA table_info`) — só adiciona o que falta; pula tabela inexistente (banco novo). Resolve o upgrade legítimo v3→v3 (ex.: banco Fase 1 ganhando as colunas da Fase 4) preservando os dados.
+- Novo `_archive_foreign_db_if_any()`: se a tabela `articles` existe mas **não tem `content_excerpt`** (coluna base de todo banco v3), o banco é de schema estrangeiro/pré-v3 → renomeado para `kosmos.db.pre-v3.bak` (não apagado) e um banco v3 limpo é criado. Banco v3 legítimo (qualquer fase) tem `content_excerpt` e segue para a migração normal.
+
+#### Teste de regressão
+`KOSMOS/tests/test_database.py::TestMigration` (3 testes): banco estrangeiro é arquivado em `.pre-v3.bak` + recriado v3; banco v3 antigo (sem `analysis_status`) é migrado **preservando os dados** e a query `WHERE analysis_status='pending'` passa a funcionar; banco v3 válido não é arquivado. Suíte KOSMOS: 560 passam. Validado em runtime: KOSMOS inicia (`MainWindow inicializada`) após arquivar o banco pré-v3.

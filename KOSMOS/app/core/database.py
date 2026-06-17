@@ -206,13 +206,17 @@ def init_db() -> None:
     reprocesse na próxima execução.
     """
     DB_PATH.parent.mkdir(parents=True, exist_ok=True)
+    _archive_foreign_db_if_any()
     try:
         conn = sqlite3.connect(str(DB_PATH))
         try:
             conn.execute("PRAGMA foreign_keys = ON")
             conn.execute("PRAGMA journal_mode = WAL")
-            conn.executescript(_DDL)
+            # Migração ANTES do schema: bancos antigos precisam ganhar as colunas novas
+            # (ai_*, analysis_*, etc.) antes que os índices/triggers que as referenciam
+            # sejam criados pelo executescript — senão a inicialização aborta.
             _ensure_columns(conn)
+            conn.executescript(_DDL)
             _reset_stale_analyses(conn)
             log.info("Banco inicializado em %s.", DB_PATH)
         finally:
@@ -222,23 +226,99 @@ def init_db() -> None:
         raise
 
 
-def _ensure_columns(conn: sqlite3.Connection) -> None:
-    """Adiciona colunas novas a bancos pré-existentes (ALTER idempotente).
+# Colunas adicionadas a `feeds`/`articles` ao longo das fases. Bancos criados em
+# fases anteriores não as têm — `CREATE TABLE IF NOT EXISTS` não altera tabela
+# existente, então cada coluna ausente é adicionada via ALTER (migração).
+_MIGRATION_COLUMNS = {
+    "feeds": [
+        ("site_url", "TEXT"),
+        ("category", "TEXT NOT NULL DEFAULT 'Sem categoria'"),
+        ("last_fetched_at", "TEXT"),
+        ("fetch_interval_min", "INTEGER NOT NULL DEFAULT 60"),
+        ("enabled", "INTEGER NOT NULL DEFAULT 1"),
+        ("error_count", "INTEGER NOT NULL DEFAULT 0"),
+        ("last_error", "TEXT"),
+    ],
+    "articles": [
+        ("title_translated", "TEXT"),
+        ("content_text", "TEXT"),
+        ("content_text_translated", "TEXT"),
+        ("estimated_reading_min", "INTEGER"),
+        ("article_type", "TEXT"),
+        ("language_detected", "TEXT"),
+        ("is_scraped", "INTEGER NOT NULL DEFAULT 0"),
+        ("is_read", "INTEGER NOT NULL DEFAULT 0"),
+        ("is_saved", "INTEGER NOT NULL DEFAULT 0"),
+        ("read_at", "TEXT"),
+        ("read_duration_sec", "INTEGER"),
+        ("notes", "TEXT"),
+        ("ai_tags", "TEXT"),
+        ("ai_sentiment", "TEXT"),
+        ("ai_clickbait_score", "REAL"),
+        ("ai_summary", "TEXT"),
+        ("ai_language", "TEXT"),
+        ("ai_five_ws", "TEXT"),
+        ("ai_entities", "TEXT"),
+        ("ai_bias", "TEXT"),
+        ("analysis_status", "TEXT NOT NULL DEFAULT 'pending'"),
+        ("analysis_started_at", "TEXT"),
+        ("analysis_schema_version", "INTEGER NOT NULL DEFAULT 0"),
+    ],
+}
 
-    `CREATE TABLE IF NOT EXISTS` não altera tabelas já criadas, então colunas novas
-    precisam de ALTER. Cada ALTER é best-effort: se a coluna já existe, o erro é
-    logado em debug e ignorado (não há `except: pass` silencioso).
+
+def _archive_foreign_db_if_any() -> None:
+    """Arquiva um banco de schema estrangeiro/pré-v3 e deixa o caminho livre para um v3 novo.
+
+    O KOSMOS v3 foi replanejado do zero (2026-06-01); bancos anteriores têm um schema
+    incompatível (colunas como `guid`/`content_full`, sem `content_excerpt`) que não
+    dá para migrar coluna-a-coluna. A coluna base `content_excerpt` existe em todo
+    banco v3 (desde a Fase 1) — se a tabela `articles` existe SEM ela, é um banco
+    pré-v3: renomeia para `.pre-v3.bak` (não apaga) e o init cria um v3 limpo.
+    Um banco v3 legítimo (qualquer fase) tem `content_excerpt` e segue para a migração.
     """
-    _new_columns = [
-        ("articles", "content_text_translated", "TEXT"),
-    ]
-    for table, column, coltype in _new_columns:
+    if not DB_PATH.exists():
+        return
+    try:
+        conn = sqlite3.connect(str(DB_PATH))
         try:
-            conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {coltype}")
-            log.info("Coluna %s.%s adicionada (migração).", table, column)
-        except sqlite3.OperationalError as exc:
-            # "duplicate column name" → já existe; qualquer outro erro é logado também
-            log.debug("ALTER %s.%s ignorado: %s", table, column, exc)
+            cols = {row[1] for row in conn.execute("PRAGMA table_info(articles)").fetchall()}
+        finally:
+            conn.close()
+    except sqlite3.Error as exc:
+        log.warning("Não foi possível inspecionar o banco existente: %s", exc)
+        return
+    if cols and "content_excerpt" not in cols:
+        backup = DB_PATH.with_name(DB_PATH.name + ".pre-v3.bak")
+        DB_PATH.rename(backup)
+        for suffix in ("-wal", "-shm"):
+            side = DB_PATH.with_name(DB_PATH.name + suffix)
+            if side.exists():
+                side.rename(backup.with_name(backup.name + suffix))
+        log.warning("Banco pré-v3 incompatível detectado — arquivado em %s; criando banco v3 novo.", backup)
+
+
+def _ensure_columns(conn: sqlite3.Connection) -> None:
+    """Migra bancos pré-existentes: adiciona as colunas novas que faltarem.
+
+    Roda ANTES do `executescript` para que os índices/triggers que referenciam as
+    colunas novas (ex.: `analysis_status`) já as encontrem. Introspecciona cada
+    tabela: se ela ainda não existe (banco novo), pula — o `executescript` a criará
+    completa. Cada ALTER faltante é aplicado e logado; falhas são logadas (sem
+    caminho silencioso).
+    """
+    for table, columns in _MIGRATION_COLUMNS.items():
+        existing = {row[1] for row in conn.execute(f"PRAGMA table_info({table})").fetchall()}
+        if not existing:
+            continue  # tabela inexistente (banco novo) — executescript cria completa
+        for column, coltype in columns:
+            if column in existing:
+                continue
+            try:
+                conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {coltype}")
+                log.info("Migração: coluna %s.%s adicionada.", table, column)
+            except sqlite3.OperationalError as exc:
+                log.warning("Migração: ALTER %s.%s falhou: %s", table, column, exc)
     conn.commit()
 
 
