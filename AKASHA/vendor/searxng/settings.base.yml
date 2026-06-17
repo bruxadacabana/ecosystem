@@ -1,0 +1,79 @@
+# =============================================================================
+# SearXNG settings — base do SearXNG VENDORIZADO do AKASHA (3ª alternativa de busca)
+#
+# Este é um TEMPLATE. O setup gera o settings.yml real a partir dele, substituindo
+# __SECRET_KEY__ por um segredo aleatório. Aponte o SearXNG para o arquivo gerado
+# via a variável de ambiente SEARXNG_SETTINGS_PATH.
+#
+# Decisões (ver TODO "SearXNG vendorizado (Windows, sem Docker)"):
+#   - use_default_settings: true  → mergeia com os defaults; só sobrescreve o necessário
+#   - limiter: false              → sem rate limiting (uso local; evita 403 no AKASHA)
+#   - formats: [html, json]       → 'json' é OBRIGATÓRIO para a API consumida pelo AKASHA
+#   - bind_address: 127.0.0.1     → apenas local, nunca exposto na rede
+#   - port: 8889                  → porta dedicada da instância vendorizada (distinta de
+#                                   8080 remoto / 8888 instalação local / 808x llama-servers)
+#   - engines curados espelhando o T410 (validados — sem bloqueio de bot / spam)
+# =============================================================================
+
+use_default_settings:
+  engines:
+    keep_only:
+      # Validados (T410 / README do AKASHA): contribuem resultados em automação.
+      - startpage         # mais confiável; proxy do Google sem tracking
+      - bing              # bom volume; índice Microsoft
+      - google            # bom volume (pode dar timeout/CAPTCHA sob uso intenso)
+      - mwmbl             # índice independente; não bloqueia o IP; resultados únicos
+      - arxiv             # acadêmico
+      - semantic scholar  # acadêmico
+      # Desabilitados (não funcionam bem em automação):
+      #   duckduckgo — CAPTCHA permanente (usado fora do SearXNG como fallback final)
+      #   brave      — rate limit agressivo (~180s)
+      #   qwant      — SEO spam em queries de nicho
+      #   yahoo      — wrapper do Bing (redundante) + seletores instáveis
+      #   wikipedia/wikidata — 0 resultados nas queries testadas
+      #   mojeek     — depende da rede (access denied no IP do T410)
+
+general:
+  debug: false
+  instance_name: "AKASHA Search (vendor)"
+  donation_url: false
+  contact_url: false
+
+search:
+  safe_search: 0
+  autocomplete: ""
+  default_lang: ""
+  ban_time_on_fail: 5
+  max_ban_time_on_fail: 120
+  formats:
+    - html
+    - json               # OBRIGATÓRIO — sem 'json' o AKASHA recebe HTTP 403
+
+server:
+  port: 8889
+  bind_address: "127.0.0.1"   # apenas local
+  secret_key: "__SECRET_KEY__"
+  base_url: false
+  limiter: false              # uso local — sem rate limiting
+  default_http_headers:
+    X-Content-Type-Options: nosniff
+    X-XSS-Protection: 1; mode=block
+    X-Download-Options: noopen
+    X-Robots-Tag: noindex, nofollow
+    Referrer-Policy: no-referrer
+
+ui:
+  static_use_hash: false
+  default_locale: ""
+  query_in_title: false
+  infinite_scroll: false
+  center_alignment: false
+  default_theme: simple
+  results_on_new_tab: false
+
+outgoing:
+  request_timeout: 8.0
+  max_request_timeout: 15.0
+  pool_connections: 100
+  pool_maxsize: 20
+  enable_http2: true

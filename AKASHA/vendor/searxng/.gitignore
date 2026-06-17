@@ -1,0 +1,33 @@
+# to sync with .dockerignore & pyrightconfig.json
+
+*.pyc
+*/*.pyc
+*~
+*.swp
+geckodriver.log
+
+.coverage
+coverage/
+
+.govm/
+.nvm/
+cache/
+build/
+dist/
+local/
+gh-pages/
+*.egg-info/
+
+/package-lock.json
+/node_modules/
+
+.idea/
+
+.dir-locals.el
+
+.python-version
+
+# ── AKASHA vendor: artefatos gerados no setup (não versionar) ──
+/.venv/
+/settings.yml
+# searx/version_frozen.py É versionado aqui (congela a versão sem .git).
