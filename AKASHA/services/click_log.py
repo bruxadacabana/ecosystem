@@ -59,6 +59,14 @@ async def log_click(
         )
         await db.commit()
 
+    # Espelho no store compartilhado (sync_root) — best-effort, não bloqueia.
+    try:
+        import asyncio
+        import shared_history  # type: ignore
+        await asyncio.to_thread(shared_history.record_click, url, query, position)
+    except Exception:
+        pass
+
 
 def _click_weight(position: int) -> float:
     """Peso DCG para um clique na posição `position` (1-indexed).

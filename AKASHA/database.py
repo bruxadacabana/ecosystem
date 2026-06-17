@@ -1796,6 +1796,15 @@ async def log_visit_dedup(url: str, title: str, window_minutes: int = 60) -> Non
         )
         await db.commit()
 
+    # Espelho no store compartilhado (sync_root) — só quando uma visita NOVA é logada
+    # (respeita o dedup acima). Best-effort, fora do lock do banco local.
+    try:
+        import asyncio
+        import shared_history as _sh  # type: ignore
+        await asyncio.to_thread(_sh.record_visit, url, title or url)
+    except Exception:
+        pass
+
 
 async def get_recent_visits(n: int = 20) -> list[dict]:
     """Retorna as N visitas mais recentes para alimentar o loop de reflexão."""

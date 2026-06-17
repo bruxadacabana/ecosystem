@@ -714,6 +714,12 @@ async def search(
         await database.save_search(q, src_label or "web", total)
         await record_search_query(q)
         await log_activity("search", q, "", _json.dumps({"sources": src_label or "web", "results": total}))
+        # Espelho no store compartilhado (sync_root) — para a Akasha aprender entre máquinas.
+        try:
+            import shared_history  # type: ignore
+            await asyncio.to_thread(shared_history.record_search, q, src_label or "web", total)
+        except Exception as _exc:
+            log.debug("shared_history.record_search falhou: %s", _exc)
 
         # Clarificação seletiva: resolve resultado paralelo, marca sessão se perguntou
         _clarification_question: str = ""

@@ -41,6 +41,21 @@ def _disable_marginalia_by_default(request, monkeypatch):
     monkeypatch.setattr(_ws, "_fetch_marginalia", _empty, raising=False)
 
 
+@pytest.fixture(autouse=True)
+def _isolate_sync_root(tmp_path_factory, monkeypatch):
+    """Isola os stores compartilhados em sync_root (shared_history,
+    shared_topic_profile) num diretório temporário em TODOS os testes — nunca
+    escreve no sync_root real da usuária. Testes que precisam de um sync_root
+    específico podem re-patchar `ecosystem_client.get_sync_root`.
+    """
+    try:
+        import ecosystem_client  # noqa: PLC0415
+    except Exception:
+        return
+    d = tmp_path_factory.mktemp("sync_root")
+    monkeypatch.setattr(ecosystem_client, "get_sync_root", lambda: d, raising=False)
+
+
 @pytest.fixture()
 def db_paths(tmp_path):
     """Banco AKASHA temporário com schema completo.
