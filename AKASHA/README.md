@@ -697,6 +697,17 @@ O SearXNG não tem build nativo de Windows — roda em contêiner. Use o **Docke
 
 > ⚠️ As instruções de Docker acima seguem o fluxo padrão do `searxng-docker`; os passos exatos (nomes de arquivo/serviço, porta) podem variar conforme a versão — consulte o README do [searxng-docker](https://github.com/searxng/searxng-docker) se algo divergir.
 
+### SearXNG vendorizado (sem Docker — 3ª alternativa, ideal no Windows)
+
+Quando o Docker não roda e o servidor da rede está inalcançável (caso típico do PC de trabalho), o ecossistema traz o SearXNG **empacotado no repositório** em `AKASHA/vendor/searxng` — roda **nativo em Python, sem Docker**, inclusive no Windows. É a **3ª alternativa** da fila de busca (remoto → local → vendorizado).
+
+- **Setup:** automático pelo `atualizar.sh`/`atualizar.bat`, que chama `AKASHA/vendor/setup_searxng_vendor.py` — cria o venv dedicado (`vendor/searxng/.venv`, Python 3.13), instala as dependências e gera o `settings.yml` (a partir de `settings.base.yml`, com `secret_key` aleatório, `limiter: false`, formato `json`, porta **8889**, engines curados). Nada a fazer à mão.
+- **Quem liga:** o **HUB**, **sob demanda** — o watchdog sobe o processo só quando o SearXNG remoto **e** o local estão fora, e o desliga quando um volta. Há também start/stop manual no painel **Busca** do HUB.
+- **Remendos de Windows embutidos:** os 4 arquivos de template com `:` no nome (proibidos no Windows) já ficam de fora; um stub `pwd.py` (em `vendor/searxng/_winshim`, plantado no PYTHONPATH só no Windows) satisfaz o `import pwd` que o SearXNG faz em `valkeydb.py`. Detalhes em `AKASHA/vendor/VENDOR.md`.
+- **Versão congelada:** o SearXNG fica preso a um commit (ver `vendor/VENDOR.md` e `searx/version_frozen.py`); atualizar é uma ação deliberada (re-vendorizar). Engines degradam com o tempo — o conserto vem de um update consciente.
+
+> Mesmo no Windows, o ideal continua sendo apontar para o SearXNG da rede (T410) quando ele estiver acessível; o vendorizado é o fallback automático para quando ele não está.
+
 ### Fontes de busca (engines): quais habilitar e como
 
 Nem todo engine do SearXNG funciona bem em uso automatizado — vários bloqueiam bots, retornam spam ou nada. A curadoria abaixo foi **validada por teste** (ver tabela completa no `GUIDE.md`). Os engines vivem em `settings.yml`, na seção `engines:`; cada um tem `disabled: true|false`:

@@ -162,7 +162,7 @@ Buscador e amplificador de pesquisa. O LLM age **apenas** na camada de query —
 - Crawler de domínios com agendamento e atualização (freshness)
 - Biblioteca unificada: gerencia sites e documentos numa única seção
 - Busca híbrida: FTS5 (BM25) + busca vetorial via LOGOS (`embed_and_index` em `services/local_search.py` — gera embedding pelo LOGOS `/v1/embeddings` e insere em sqlite-vec)
-- Busca web via SearXNG self-hosted (agrega Google, Bing, Brave, DDG, Startpage) com fallback DDG; fetch paralelo de múltiplas páginas (padrão 4 × 25 resultados); script de instalação em `AKASHA/scripts/setup_searxng.sh`
+- Busca web via SearXNG (agrega Google/Bing/Startpage/mwmbl/etc.); fetch paralelo de múltiplas páginas (padrão 4 × 25 resultados). **Fila de disponibilidade:** SearXNG remoto (`web_search_backend`) → local (`web_search_backend_fallback`) → **vendorizado** (`AKASHA/vendor/searxng`, porta 8889, sem Docker, o HUB sobe sob demanda). Marginalia sempre em paralelo; DuckDuckGo é o último recurso. Setup do remoto/local: Docker ou `AKASHA/scripts/setup_searxng.sh` (Linux/systemd); o vendorizado é preparado pelo `atualizar` (`AKASHA/vendor/setup_searxng_vendor.py`)
 - Classificador de intenção afeta **apresentação** dos resultados, nunca a quantidade
 - Diversificação por domínio configurável (`max_per_domain`, padrão 5); filtragem de páginas vazias (`word_count < 50`)
 - Qualidade de extração: fallback newspaper4k, pré-filtro de páginas de navegação (razão texto-link), detecção de paywall, sinalização de SPAs (`requires_js`)
@@ -563,12 +563,14 @@ bash atualizar.sh
    → Geralmente já instalado no Windows 10 atualizado
    → Se não: https://developer.microsoft.com/microsoft-edge/webview2/
 
-5. SearXNG (opcional — backend de busca do AKASHA)
-   → Requer Python 3.11+. Instalar via: pip install searxng
-   → Ou clonar: git clone https://github.com/searxng/searxng
-   → Iniciar: python -m searxng.webapp (porta 8888)
-   → Nota: no Windows 10 com 8 GB RAM, rodar SearXNG pode consumir ~300–500 MB.
-     Alternativa: usar DDG como fallback (padrão quando web_search_backend está vazio).
+5. SearXNG — backend de busca do AKASHA
+   → No Windows, SearXNG não tem build nativo suportado e o Docker pode não rodar.
+     O ecossistema traz o SearXNG **vendorizado** (`AKASHA/vendor/searxng`, sem Docker):
+     o `atualizar.bat` cria o venv e o HUB sobe o processo (porta 8889) SOB DEMANDA —
+     só quando o SearXNG remoto e o local estiverem fora. Nada a instalar à mão.
+   → Preferível, quando possível: apontar para o SearXNG da rede (T410) em
+     ecosystem.json["akasha"]["web_search_backend"] = "http://192.168.0.252:8080".
+   → Sem nenhum SearXNG acessível, a busca web cai para Marginalia + DuckDuckGo.
 ```
 
 ### 7.2. Rust
@@ -945,7 +947,10 @@ cd HUB/src-tauri && cargo test
 | 8081 | llama-server AKASHA (interno) | Gerenciado pelo LOGOS; modelo llm_query; AKASHA, HUB |
 | 8083 | llama-server Mnemosyne (interno) | Gerenciado pelo LOGOS; modelo llm_rag; Mnemosyne |
 | 8084 | llama-server KOSMOS (interno) | Gerenciado pelo LOGOS; modelo llm_analysis; análise de artigos do KOSMOS; CPU-first (nunca descarrega AKASHA/Mnemosyne) |
-| 8888 | SearXNG (self-hosted, opcional) | Backend de busca web do AKASHA; configura via `web_search_backend` no ecosystem.json |
+| 8080 / 8888 | SearXNG (remoto ou local self-hosted) | Backend de busca web do AKASHA. Remoto = servidor da rede (T410, `web_search_backend`); local instalado na máquina (`web_search_backend_fallback`) |
+| 8889 | SearXNG **vendorizado** (sem Docker) | 3ª alternativa de busca; empacotado em `AKASHA/vendor/searxng`. O HUB sobe **sob demanda** (só quando remoto+local caem) e desliga quando um volta |
+
+**Fila de busca web do AKASHA:** remoto (8080) → local (8888) → vendorizado (8889), usando o de maior prioridade que estiver vivo (probe `/healthz`). Marginalia roda **sempre em paralelo**; DuckDuckGo é o último recurso. Ver README do AKASHA (seção "Rodando o SearXNG").
 
 **Syncthing:** gerenciado via painel no HUB; porta padrão 8384 (interface web local do Syncthing).
 
