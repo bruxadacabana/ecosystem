@@ -2157,3 +2157,68 @@ Degradação + privacidade: e-mail pessoal exposto no repositório; download de 
 
 #### Teste de regressão
 `AKASHA/tests/test_unpaywall_config.py` (8): leitura fresca do ecosystem.json (valor, strip, chave ausente, erro→fallback); `_enrich_unpaywall` não chama HTTP sem e-mail; `_fetch_unpaywall` retorna None sem e-mail; `unpaywall_email` presente nos defaults do Settings; e **regressão**: nenhum `jenmangelo@gmail.com` em `services/*.py`. 8 passed.
+
+---
+
+### BUG-040 · [FIXED] · test_searxng_service.py aborta a coleção do pytest no Windows (systemctl em import-time)
+
+#### Identificação
+- **Data:** 2026-06-17
+- **App(s):** AKASHA
+- **Componente:** `tests/test_searxng_service.py`; config em `pyproject.toml`
+- **Commit do fix:** `212a202`
+- **Descoberta via:** revisão-de-código / execução da suíte AKASHA no Windows
+- **Tempo de diagnóstico:** ~10 min
+
+#### Ambiente
+- **Máquina(s) afetadas:** WorkPC (Windows) e qualquer SO sem systemd (macOS)
+- **OS:** Windows 10
+- **Modo:** teste (`uv run python -m pytest`)
+- **Reproduzível em:** qualquer ambiente sem o binário `systemctl`
+
+#### Pré-condição para reproduzir
+Rodar a suíte AKASHA (`pytest`, ou `pytest --collect-only`) num SO sem systemd.
+
+#### Sintoma observado
+A coleção do pytest é interrompida: `!!! Interrupted: 1 error during collection !!!`,
+com `FileNotFoundError: [WinError 2] O sistema não pode encontrar o arquivo especificado`
+originado em `subprocess.run(["systemctl", ...])`.
+
+#### Logs
+```
+tests/test_searxng_service.py:57: in _systemd_available
+    rc, _ = _systemctl("list-units", "--quiet")
+...
+E   FileNotFoundError: [WinError 2] O sistema não pode encontrar o arquivo especificado
+ERROR tests/test_searxng_service.py
+!!!!!!!!!!!!!!!!!!! Interrupted: 1 error during collection !!!!!!!!!!!!!!!!!!!!
+```
+
+#### Causa raiz
+`_systemctl()` assumia que o binário `systemctl` existe. O resultado é usado em
+`_systemd_available()`, chamado no **nível de módulo** como argumento do decorator
+`pytest.mark.skipif(...)` — ou seja, avaliado na **importação** (fase de coleção).
+Em SO sem systemd, o `subprocess.run` levanta `FileNotFoundError`, que, por ocorrer
+na coleção, derruba a suíte inteira em vez de pular o módulo. Agravante: os testes
+`TestUnitFile` não tinham guard de plataforma (liam um unit file systemd inexistente
+fora do Linux). Efeito correlato: como o SearXNG **vendorizado** (BUG/seção 2026-06-17)
+traz a própria suíte em `vendor/searxng/tests`, o pytest também passava a coletá-la,
+somando 26 erros de coleção.
+
+#### Impacto
+Degradação: impossível rodar a suíte AKASHA completa no Windows — toda a coleção
+abortava. Não afeta runtime do app.
+
+#### Fix aplicado
+- `_systemctl()` captura `FileNotFoundError`/`OSError` e retorna `(127, "")` →
+  `_systemd_available()` vira `False` graciosamente.
+- `pytestmark = systemd_available` no módulo → todos os testes são **pulados** sem
+  systemd (inclui os `TestUnitFile`).
+- `pyproject.toml [tool.pytest.ini_options]`: `testpaths = ["tests"]` +
+  `norecursedirs = ["vendor", ".venv", "*.egg-info", "node_modules"]` → exclui a
+  suíte do SearXNG vendorizado da coleção.
+
+#### Teste de regressão
+`pytest --collect-only` no Windows: **1378 testes coletados, 0 erros**, **0**
+ocorrências de `vendor/searxng`. `pytest tests/test_searxng_service.py`:
+**15 skipped** (nenhuma falha) fora do Linux.
