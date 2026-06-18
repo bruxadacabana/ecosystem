@@ -12,6 +12,7 @@
 
 use crate::ecosystem;
 use crate::error::AppError;
+use regex::Regex;
 use rusqlite::{params, Connection};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
@@ -226,24 +227,144 @@ pub fn sources_get_akasha_backup() -> Result<Vec<DomainEntry>, AppError> {
     Ok(result)
 }
 
-/// Atualiza o flag `library` ou `feed` de um domínio em ecosystem.json["sources"].
-/// `flag` deve ser "library" ou "feed".
+/// Liga/desliga um domínio como fonte do KOSMOS (`feed`) ou da Biblioteca AKASHA (`library`).
+///
+/// Além de gravar o flag de UI em `ecosystem.json["sources"]`, APLICA a ação real:
+///   - `feed` ligar  → **auto-descobre** o RSS/Atom do domínio e adiciona ao banco do KOSMOS.
+///   - `feed` desligar → remove do KOSMOS os feeds daquele domínio.
+///   - `library` → por ora só grava o flag (wiring com `crawl_sites` da AKASHA: TODO).
 #[tauri::command]
-pub fn sources_set_flag(domain: String, flag: String, enabled: bool) -> Result<(), AppError> {
+pub async fn sources_set_flag(domain: String, flag: String, enabled: bool) -> Result<(), AppError> {
     if flag != "library" && flag != "feed" {
         return Err(AppError::InvalidPath(
             format!("flag inválida: {flag} (esperado: library | feed)"),
         ));
     }
+
+    // Ação real do toggle do KOSMOS — feita ANTES de gravar o flag de UI, para que
+    // a flag só fique ligada se a fonte foi de fato adicionada.
+    if flag == "feed" {
+        if enabled {
+            add_kosmos_feed_for_domain(&domain).await?;
+        } else {
+            remove_kosmos_feeds_for_domain(&domain)?;
+        }
+    }
+
+    write_source_flag(&domain, &flag, enabled)
+}
+
+/// Persiste o flag de UI (`library`/`feed`) de um domínio em `ecosystem.json["sources"]`.
+fn write_source_flag(domain: &str, flag: &str, enabled: bool) -> Result<(), AppError> {
     let eco = ecosystem::read_json();
     let mut sources = eco["sources"].as_object().cloned().unwrap_or_default();
     let entry = sources
-        .entry(domain)
+        .entry(domain.to_string())
         .or_insert_with(|| json!({ "library": false, "feed": false }));
     if let Some(obj) = entry.as_object_mut() {
-        obj.insert(flag, json!(enabled));
+        obj.insert(flag.to_string(), json!(enabled));
     }
     ecosystem::write_section("sources", serde_json::Value::Object(sources))
+}
+
+/// Descobre o feed do domínio e o adiciona ao banco do KOSMOS (categoria = domínio).
+async fn add_kosmos_feed_for_domain(domain: &str) -> Result<(), AppError> {
+    let feed_url = discover_feed_url(domain)
+        .await
+        .map_err(|e| AppError::Io(format!("Nenhum feed RSS encontrado em {domain}: {e}")))?;
+    let db = kosmos_db_path()
+        .ok_or_else(|| AppError::MissingConfig("kosmos.db não encontrado (sync_root configurado?)".into()))?;
+    let conn = Connection::open(&db).map_err(|e| AppError::Io(e.to_string()))?;
+    let _ = conn.busy_timeout(std::time::Duration::from_secs(5));
+    conn.execute(
+        "INSERT OR IGNORE INTO feeds (url, category) VALUES (?1, ?2)",
+        params![feed_url, domain],
+    )
+    .map_err(|e| AppError::Io(e.to_string()))?;
+    Ok(())
+}
+
+/// Remove do KOSMOS todos os feeds cujo host seja o domínio dado.
+fn remove_kosmos_feeds_for_domain(domain: &str) -> Result<(), AppError> {
+    let db = match kosmos_db_path() {
+        Some(p) => p,
+        None => return Ok(()), // sem banco → nada a remover
+    };
+    let conn = Connection::open(&db).map_err(|e| AppError::Io(e.to_string()))?;
+    let _ = conn.busy_timeout(std::time::Duration::from_secs(5));
+    let ids: Vec<i64> = {
+        let mut stmt = conn.prepare("SELECT id, url FROM feeds").map_err(|e| AppError::Io(e.to_string()))?;
+        let rows = stmt
+            .query_map(params![], |r| Ok((r.get::<_, i64>(0)?, r.get::<_, String>(1)?)))
+            .map_err(|e| AppError::Io(e.to_string()))?;
+        rows.filter_map(|r| r.ok())
+            .filter(|(_, url)| extract_host(url) == domain)
+            .map(|(id, _)| id)
+            .collect()
+    };
+    for id in ids {
+        let _ = conn.execute("DELETE FROM feeds WHERE id = ?1", params![id]);
+    }
+    Ok(())
+}
+
+/// Busca a home `https://{domain}/` e extrai a URL do feed do `<link rel=alternate>`.
+async fn discover_feed_url(domain: &str) -> Result<String, String> {
+    let base = format!("https://{domain}/");
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(12))
+        .user_agent("KOSMOS-feed-discovery/1.0")
+        .build()
+        .map_err(|e| e.to_string())?;
+    let html = client
+        .get(&base)
+        .send()
+        .await
+        .map_err(|e| e.to_string())?
+        .text()
+        .await
+        .map_err(|e| e.to_string())?;
+    extract_feed_link(&html, &base).ok_or_else(|| "link de feed ausente no HTML".to_string())
+}
+
+/// Acha uma `<link …>` com type `application/(rss|atom)+xml` e devolve o href absoluto.
+fn extract_feed_link(html: &str, base: &str) -> Option<String> {
+    let link_re = Regex::new(r#"(?is)<link\b[^>]*>"#).ok()?;
+    let href_re = Regex::new(r#"(?is)href\s*=\s*["']([^"']+)["']"#).ok()?;
+    for m in link_re.find_iter(html) {
+        let tag = m.as_str();
+        let low = tag.to_ascii_lowercase();
+        if low.contains("application/rss+xml") || low.contains("application/atom+xml") {
+            if let Some(c) = href_re.captures(tag) {
+                let href = c.get(1)?.as_str().trim();
+                if !href.is_empty() {
+                    return Some(resolve_url(base, href));
+                }
+            }
+        }
+    }
+    None
+}
+
+/// Resolve um href possivelmente relativo contra a base `https://host/`.
+fn resolve_url(base: &str, href: &str) -> String {
+    if href.starts_with("http://") || href.starts_with("https://") {
+        href.to_string()
+    } else if let Some(rest) = href.strip_prefix("//") {
+        format!("https://{rest}")
+    } else {
+        let host = base
+            .trim_start_matches("https://")
+            .trim_start_matches("http://")
+            .split('/')
+            .next()
+            .unwrap_or("");
+        if let Some(stripped) = href.strip_prefix('/') {
+            format!("https://{host}/{stripped}")
+        } else {
+            format!("https://{host}/{href}")
+        }
+    }
 }
 
 // ─── Testes ──────────────────────────────────────────────────────────────────
@@ -322,5 +443,59 @@ mod tests {
         read_akasha_sites(&mut map, &db).unwrap();
         // KOSMOS ausente: map ainda tem o site do AKASHA
         assert!(!map.is_empty(), "sites do AKASHA devem aparecer mesmo sem KOSMOS");
+    }
+
+    // ─── auto-descoberta de feed (toggle do KOSMOS) ──────────────────────────
+
+    #[test]
+    fn test_extract_feed_link_rss_relative() {
+        let html = r#"<html><head>
+            <link rel="alternate" type="application/rss+xml" href="/feed.xml" title="RSS">
+        </head></html>"#;
+        assert_eq!(extract_feed_link(html, "https://blog.com/"),
+                   Some("https://blog.com/feed.xml".into()));
+    }
+
+    #[test]
+    fn test_extract_feed_link_atom_absolute_href_first() {
+        let html = r#"<link href="https://x.com/atom" type="application/atom+xml" rel="alternate">"#;
+        assert_eq!(extract_feed_link(html, "https://blog.com/"),
+                   Some("https://x.com/atom".into()));
+    }
+
+    #[test]
+    fn test_extract_feed_link_none() {
+        assert_eq!(extract_feed_link("<html><head><title>x</title></head></html>", "https://b.com/"), None);
+    }
+
+    #[test]
+    fn test_resolve_url_variants() {
+        assert_eq!(resolve_url("https://b.com/", "https://x.com/f"), "https://x.com/f");
+        assert_eq!(resolve_url("https://b.com/", "//cdn.com/f"), "https://cdn.com/f");
+        assert_eq!(resolve_url("https://b.com/", "/feed"), "https://b.com/feed");
+        assert_eq!(resolve_url("https://b.com/", "feed.xml"), "https://b.com/feed.xml");
+    }
+
+    #[test]
+    fn test_remove_kosmos_feeds_for_domain() {
+        // banco v3 com 2 feeds; remover o do domínio 'a.com' deixa só o outro
+        let tmp = tempfile::tempdir().unwrap();
+        let db = tmp.path().join("kosmos.db");
+        let conn = Connection::open(&db).unwrap();
+        conn.execute_batch(
+            "CREATE TABLE feeds (id INTEGER PRIMARY KEY AUTOINCREMENT, url TEXT NOT NULL UNIQUE,
+                title TEXT, category TEXT NOT NULL DEFAULT 'Sem categoria', enabled INTEGER NOT NULL DEFAULT 1);
+             INSERT INTO feeds (url) VALUES ('https://a.com/rss'), ('https://b.com/rss');",
+        ).unwrap();
+        // remove por id os de host a.com (replicando a lógica, já que kosmos_db_path lê o eco real)
+        let ids: Vec<i64> = {
+            let mut stmt = conn.prepare("SELECT id, url FROM feeds").unwrap();
+            let rows = stmt.query_map(params![], |r| Ok((r.get::<_, i64>(0)?, r.get::<_, String>(1)?))).unwrap();
+            rows.filter_map(|r| r.ok()).filter(|(_, u)| extract_host(u) == "a.com").map(|(i, _)| i).collect()
+        };
+        assert_eq!(ids.len(), 1);
+        for id in ids { conn.execute("DELETE FROM feeds WHERE id=?1", params![id]).unwrap(); }
+        let remaining: String = conn.query_row("SELECT url FROM feeds", params![], |r| r.get(0)).unwrap();
+        assert_eq!(remaining, "https://b.com/rss");
     }
 }

@@ -36,13 +36,23 @@ export function FontesView() {
   async function handleToggle(domain: string, flag: 'library' | 'feed', current: boolean) {
     const key = `${domain}:${flag}`
     setToggling(key)
+    setError(null)
     const res = await cmd.sourcesSetFlag(domain, flag, !current)
     if (res.ok) {
-      setDomains(prev =>
-        prev.map(d =>
-          d.domain === domain ? { ...d, [flag]: !current } : d,
-        ),
-      )
+      if (flag === 'feed') {
+        // Ligar/desligar o feed do KOSMOS descobre/remove a fonte de verdade —
+        // recarrega para refletir o feed encontrado (ou removido) por domínio.
+        await load()
+      } else {
+        setDomains(prev =>
+          prev.map(d =>
+            d.domain === domain ? { ...d, [flag]: !current } : d,
+          ),
+        )
+      }
+    } else {
+      // Ex.: nenhum feed RSS encontrado no domínio.
+      setError(res.error.message)
     }
     setToggling(null)
   }
