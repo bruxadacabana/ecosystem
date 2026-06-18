@@ -4,6 +4,11 @@
 {% block title %}{% if query %}{{ query }} — AKASHA{% else %}AKASHA{% endif %}{% endblock %}
 
 {% block content %}
+<!-- ─── Banner de status do backend de busca (auto-carregado via HTMX) ─── -->
+{% if query %}
+<div hx-get="/search/backend-status" hx-trigger="load" hx-swap="outerHTML"></div>
+{% endif %}
+
 <!-- ─── Aviso sites sem cadastro ────────────────────────────────── -->
 {% if src_sites and not has_sites and query %}
   <section class="empty-state" style="padding:1rem 0;">

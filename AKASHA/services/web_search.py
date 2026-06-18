@@ -430,6 +430,39 @@ async def _searxng_alive(url: str) -> bool:
         return False
 
 
+async def web_search_backend_status() -> dict:
+    """Estado do backend de busca web, para o banner da página de busca.
+
+    Retorna um dict com: qual SearXNG está servindo (remoto/local/vendor/None),
+    se está degradado (um backend de maior prioridade caiu), se nenhum SearXNG
+    responde, e se a Marginalia está sem chave própria. `warn` indica se há algo
+    a sinalizar (nenhum SearXNG, ou degradação) — o banner some quando nominal.
+    """
+    cands = _searxng_candidates()
+    first_label = cands[0][0] if cands else None
+    active = await _active_searxng()
+    label = active[0] if active is not None else None
+    url = active[1] if active is not None else ""
+
+    searxng_down = active is None
+    # Degradado: está servindo, mas NÃO pelo backend de maior prioridade configurado.
+    degraded = active is not None and label != first_label
+
+    cfg = _akasha_cfg()
+    marginalia_public = not (cfg.get("marginalia_api_key", "") or "").strip()
+
+    status = {
+        "active_label":      label,          # "remoto" | "local" | "vendor" | None
+        "active_url":        url,
+        "searxng_down":      searxng_down,
+        "degraded":          degraded,
+        "marginalia_public": marginalia_public,
+        "warn":              searxng_down or degraded,
+    }
+    log.debug("web_search_backend_status: %s", status)
+    return status
+
+
 async def _active_searxng() -> tuple[str, str] | None:
     """Escolhe o SearXNG de maior prioridade que está VIVO (probes em paralelo).
 

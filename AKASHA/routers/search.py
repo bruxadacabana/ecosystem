@@ -994,6 +994,24 @@ async def search_summarize(
     )
 
 
+@router.get("/search/backend-status", response_class=HTMLResponse)
+async def search_backend_status(request: Request) -> HTMLResponse:
+    """Fragmento HTMX (auto-carregado): banner de status do backend de busca web.
+
+    Vazio quando nominal (SearXNG de maior prioridade servindo). Sinaliza quando
+    nenhum SearXNG responde ou quando um backend de menor prioridade está em uso.
+    """
+    from services.web_search import web_search_backend_status
+    try:
+        status = await web_search_backend_status()
+    except Exception as exc:
+        log.debug("search_backend_status falhou: %s", exc)
+        return HTMLResponse("")
+    return templates.TemplateResponse(
+        request, "_search_backend_banner.html", {"status": status}
+    )
+
+
 @router.post("/search/release-model")
 async def search_release_model() -> dict:
     """Libera o modelo LLM da VRAM explicitamente (botão 'Encerrar sessão')."""

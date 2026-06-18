@@ -1,0 +1,28 @@
+{# Banner de status do backend de busca web. Vazio quando nominal (some). #}
+{% if status.warn %}
+<div class="backend-banner {{ 'backend-banner-error' if status.searxng_down else 'backend-banner-warn' }}"
+     style="display:flex; align-items:flex-start; gap:.5rem; padding:.6rem .9rem; margin:.4rem 0;
+            border-radius:8px; font-size:.85rem; line-height:1.4;
+            border:1px solid {{ '#8B3A2A' if status.searxng_down else '#b8860b' }};
+            color:var(--ink, #e8e8e8); background:rgba(0,0,0,.15);">
+  <span aria-hidden="true">&#x26A0;</span>
+  <span>
+    {% if status.searxng_down %}
+      <strong>Nenhum SearXNG disponível.</strong>
+      A busca web está usando Marginalia/DuckDuckGo (resultados reduzidos). Verifique o
+      SearXNG remoto/local em <a href="/settings" class="result-link">Settings</a>.
+    {% elif status.degraded %}
+      <strong>SearXNG de maior prioridade indisponível.</strong>
+      Usando
+      {% if status.active_label == 'local' %}a instância <strong>local</strong>
+      {% elif status.active_label == 'vendor' %}o SearXNG <strong>vendorizado</strong>
+      {% else %}<strong>{{ status.active_label }}</strong>{% endif %}
+      ({{ status.active_url }}).
+    {% endif %}
+    {% if status.marginalia_public %}
+      <br><span style="opacity:.75;">Marginalia usando chave pública (rate limit compartilhado) —
+      defina uma chave própria em <a href="/settings" class="result-link">Settings</a>.</span>
+    {% endif %}
+  </span>
+</div>
+{% endif %}
