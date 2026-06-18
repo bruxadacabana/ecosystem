@@ -51,3 +51,21 @@ def apply_theme(app: QApplication, theme: str) -> None:
     except OSError as exc:
         log.error("Falha ao ler QSS '%s': %s", qss_file, exc)
         app.setStyleSheet("")
+
+
+def reader_css(theme: str) -> str:
+    """Retorna o CSS do leitor de artigos (QWebEngineView) do tema dado.
+
+    Lê ``reader_{theme}.css`` de THEMES_DIR (tipografia sépia/serifada + campo
+    estelar + regras de destaque). Devolve string vazia se ausente — o leitor
+    ainda renderiza, só sem estilo.
+    """
+    css_file = THEMES_DIR / f"reader_{theme}.css"
+    if not css_file.exists():
+        log.warning("CSS do leitor '%s' não encontrado.", css_file.name)
+        return ""
+    try:
+        return css_file.read_text(encoding="utf-8")
+    except OSError as exc:
+        log.error("Falha ao ler CSS do leitor '%s': %s", css_file, exc)
+        return ""

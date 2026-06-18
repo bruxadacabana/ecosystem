@@ -95,7 +95,7 @@ class MainWindow(QMainWindow):
 
         self._sidebar = FeedSidebar()
         self._article_list = ArticleList()
-        self._reader = ReaderPane()
+        self._reader = ReaderPane(theme=self.config.theme)
 
         splitter.addWidget(self._sidebar)
         splitter.addWidget(self._article_list)

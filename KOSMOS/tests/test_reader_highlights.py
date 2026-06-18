@@ -67,10 +67,10 @@ def reader(qapp, tmp_path):
 class TestBodyHtml:
     def test_wraps_matched_span(self):
         html = _body_html("foo bar baz", [{"text": "bar", "highlight_type": "citation"}])
-        assert '<span style="background-color:#5C5020">bar</span>' in html
+        assert '<mark class="hl-citation">bar</mark>' in html
 
     def test_unmatched_ignored(self):
-        assert "span" not in _body_html("foo bar", [{"text": "zzz", "highlight_type": "fact"}])
+        assert "<mark" not in _body_html("foo bar", [{"text": "zzz", "highlight_type": "fact"}])
 
     def test_escapes_html(self):
         html = _body_html("<b>x</b>", [])
@@ -85,7 +85,7 @@ class TestBodyHtml:
             {"text": "longo", "highlight_type": "fact"},
             {"text": "trecho longo", "highlight_type": "citation"},
         ])
-        assert '<span style="background-color:#5C5020">trecho longo</span>' in html
+        assert '<mark class="hl-citation">trecho longo</mark>' in html
 
 
 # ---------------------------------------------------------------------------
@@ -98,14 +98,14 @@ class TestReaderHighlights:
         aid = _article(conn, fid)
         add_highlight(aid, "trecho importante", "fact", conn=conn)
         r.show_article(aid, conn=conn)
-        assert "<span" in r._body_lbl.text()
+        assert "<mark" in r.current_body_html()
         assert r._highlights_list.count() == 1
 
     def test_open_without_highlight_plain_body(self, reader):
         r, conn, fid = reader
         aid = _article(conn, fid)
         r.show_article(aid, conn=conn)
-        assert "<span" not in r._body_lbl.text()
+        assert "<mark" not in r.current_body_html()
         assert r._highlights_list.count() == 0
 
     def test_create_highlight_colors_and_lists(self, reader):
@@ -114,7 +114,7 @@ class TestReaderHighlights:
         r.show_article(aid, conn=conn)
         r._create_highlight("trecho importante", "citation")
         assert r._highlights_list.count() == 1
-        assert "<span" in r._body_lbl.text()
+        assert "<mark" in r.current_body_html()
         # persistiu no banco
         assert conn.execute("SELECT COUNT(*) c FROM highlights WHERE article_id=?", (aid,)).fetchone()["c"] == 1
 
@@ -138,4 +138,4 @@ class TestReaderHighlights:
         r._highlights_list.setCurrentRow(0)
         r._on_remove_highlight()
         assert r._highlights_list.count() == 0
-        assert "<span" not in r._body_lbl.text()   # corpo volta a plano
+        assert "<mark" not in r.current_body_html()   # corpo volta a plano

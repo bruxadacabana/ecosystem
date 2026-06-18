@@ -1,0 +1,1542 @@
+================================================================================
+  KOSMOS — BÍBLIA DO DESENVOLVEDOR v0.1
+  Leitor, Agregador e Gerenciador de Notícias e Feeds
+  Data: 2026-03-20
+  Status: PRÉ-DESENVOLVIMENTO — escopo aprovado, aguardando início do código
+================================================================================
+
+  Este documento é destinado a qualquer desenvolvedor que vá iniciar ou dar
+  continuidade ao projeto KOSMOS. Contém toda a informação necessária para
+  compreender a estrutura, configurar o ambiente, as decisões de arquitetura,
+  o sistema de design e o escopo completo de funcionalidades.
+  Deve ser atualizado a cada mudança significativa no projeto.
+
+  KOSMOS é um aplicativo independente. Não depende do OGMA para funcionar,
+  mas compartilha a mesma stack tecnológica, sistema de design (estética de
+  papel envelhecido / máquina de escrever) e convenções de projeto.
+  Desenvolvedores familiarizados com o OGMA se sentirão em casa aqui.
+
+================================================================================
+ÍNDICE
+================================================================================
+
+  1.  Visão Geral do Projeto
+  2.  Stack Tecnológica e Versões
+  3.  Estrutura de Pastas
+  4.  Hierarquia de Dados
+  5.  Fontes de Conteúdo — Tipos e Abordagens
+        5.1  RSS Genérico
+        5.2  Reddit (API oficial)
+        5.3  YouTube (RSS)
+        5.4  Tumblr (RSS)
+        5.5  Substack (RSS)
+        5.6  Mastodon (RSS)
+        5.7  Twitter/X — Adiado para versão futura
+  6.  Funcionalidades — Escopo v1
+        6.1  Dashboard Principal
+        6.2  Painel de Leitura
+        6.3  Gerenciamento de Feeds e Categorias
+        6.4  Salvar e Arquivar
+        6.5  Web Scraping (busca de artigo completo)
+        6.6  Tradução (Argos Translate)
+        6.7  Filtros e Busca
+        6.8  Atualização Automática em Background
+        6.9  Exportação (PDF e Markdown)
+        6.10 Estatísticas de Leitura
+        6.11 Configurações
+  7.  Funcionalidades para Versão Futura
+  8.  Banco de Dados — Schema Completo
+  9.  Sistema de Design — Bíblia Visual
+  10. Bibliotecas — Guia Detalhado
+  11. Arquitetura Técnica — Decisões Importantes
+  12. Armadilhas Técnicas Conhecidas
+  13. Instruções de Setup — CachyOS
+  14. Instruções de Setup — Windows 10
+  15. Roadmap de Desenvolvimento (Fases)
+  16. Histórico de Versões deste Documento
+
+
+================================================================================
+1. VISÃO GERAL DO PROJETO
+================================================================================
+
+Nome: KOSMOS
+Inspiração: Kosmos (grego: κόσμος) — ordem, universo, totalidade do mundo.
+            A ideia de que toda a informação do mundo chega organizada num
+            único lugar, como estrelas num mapa celeste.
+
+Conceito:
+  Leitor, agregador e gerenciador de notícias e feeds sociais. Substitui e
+  reimagina completamente o Cronos. Reúne RSS genérico, Reddit, YouTube,
+  Tumblr e Substack num único leitor local, com estética de papel envelhecido
+  / máquina de escrever idêntica ao OGMA. 100% local, sem sincronização,
+  sem conta, sem telemetria. Todos os dados armazenados exclusivamente
+  em kosmos/data/.
+
+  O que diferencia o KOSMOS do Cronos:
+  - Suporte a múltiplas plataformas sociais (não só RSS)
+  - Dashboard como tela inicial (não lista de artigos)
+  - Sistema de arquivo em Markdown para salvar conteúdo como recurso
+  - Web scraping para buscar artigos completos quando o RSS trunca
+  - Tradução offline via Argos Translate
+  - Estatísticas de leitura
+  - Exportação PDF no estilo sépia
+  - Filtro de integridade do artigo (detecta se veio completo ou truncado)
+  - Integração com IA adiada para versão futura (stub vazio em ai_bridge.py)
+
+Plataformas-alvo:
+  - CachyOS / Arch Linux (plataforma principal de desenvolvimento)
+  - Windows 10 x64
+
+
+================================================================================
+2. STACK TECNOLÓGICA E VERSÕES
+================================================================================
+
+LINGUAGEM E FRAMEWORK PRINCIPAL
+  Python               3.11+ (obrigatório — usar 3.11 ou 3.12, não 3.13+)
+  PyQt6                6.7.x
+  PyQt6-WebEngine      6.7.x (pacote separado — instalar explicitamente)
+                       Usado para renderizar artigos HTML no painel de leitura
+
+BANCO DE DADOS
+  SQLite               embutido no Python (módulo sqlite3 nativo)
+  SQLAlchemy           2.0.x — ORM, gestão de schema e migrations
+
+PARSING DE RSS / ATOM
+  feedparser           6.0.x
+  Documentação:        https://feedparser.readthedocs.io/
+  Uso:                 Parseia RSS 0.9x, RSS 2.0, Atom 0.3, Atom 1.0
+                       automaticamente. Detecta encoding, lida com feeds
+                       malformados com tolerância.
+  pip install feedparser
+
+REQUISIÇÕES HTTP
+  requests             2.31.x
+  Documentação:        https://docs.python-requests.org/
+  Uso:                 Buscar feeds RSS, scraping de artigos, API do Reddit,
+                       download de favicons e capas
+  pip install requests
+
+WEB SCRAPING (busca de artigo completo)
+  beautifulsoup4       4.12.x
+  Documentação:        https://www.crummy.com/software/BeautifulSoup/bs4/doc/
+  Uso:                 Parser HTML/XML. Extrai conteúdo do DOM.
+  pip install beautifulsoup4
+
+  lxml                 5.x
+  Documentação:        https://lxml.de/
+  Uso:                 Parser backend para BeautifulSoup (mais rápido que
+                       html.parser nativo). Passar parser='lxml' no BS4.
+  pip install lxml
+
+  newspaper4k          0.9.x
+  Documentação:        https://newspaper4k.readthedocs.io/
+  Uso:                 Extração inteligente de artigos — corpo do texto,
+                       título, autor, data, imagem principal, resumo.
+                       Usa heurísticas treinadas para identificar o conteúdo
+                       principal e ignorar anúncios, navbars, footers.
+                       Baseado no newspaper3k original, mantido ativamente.
+  pip install newspaper4k
+
+  ATENÇÃO: newspaper4k não funciona em sites com conteúdo carregado via
+  JavaScript (SPAs). Para esses casos, o artigo será marcado como
+  "scraping parcial" e o usuário pode abrir no navegador.
+  Playwright está anotado para versão futura.
+
+API DO REDDIT
+  praw                 7.7.x
+  Documentação:        https://praw.readthedocs.io/
+  Uso:                 Wrapper oficial da Reddit API. Requer client_id e
+                       client_secret obtidos em https://www.reddit.com/prefs/apps
+                       (app tipo "script", gratuito).
+                       Usado apenas para Reddit — todas as outras plataformas
+                       são RSS puro.
+  pip install praw
+
+TRADUÇÃO OFFLINE
+  argostranslate       1.9.x
+  Documentação:        https://argos-translate.readthedocs.io/
+                       https://github.com/argosopentech/argos-translate
+  Uso:                 Tradução offline via modelos locais. Modelos são
+                       pacotes .argosmodel baixados sob demanda pelo usuário
+                       na tela de Configurações. Cada par de idiomas é um
+                       modelo separado (~100MB). Funciona 100% sem internet
+                       após o download.
+  pip install argostranslate
+  Modelos disponíveis: https://www.argosopentech.com/argospm/index/
+
+EXPORTAÇÃO PDF
+  WeasyPrint           62.x
+  Documentação:        https://doc.courtbouillon.org/weasyprint/
+  Uso:                 Converte HTML/CSS em PDF. Template sépia definido
+                       em app/theme/export_template.html.
+                       ATENÇÃO: requer GTK3 no Windows (ver seção 14).
+  pip install weasyprint
+
+PROCESSAMENTO DE IMAGENS
+  Pillow               10.x
+  Documentação:        https://pillow.readthedocs.io/
+  Uso:                 Redimensionar e armazenar favicons e imagens de capa
+                       dos artigos. Converter para formatos compatíveis.
+  pip install Pillow
+
+GRÁFICOS
+  matplotlib           3.8.x
+  Documentação:        https://matplotlib.org/
+  Uso:                 Gráficos na tela de Estatísticas. Integrado via
+                       FigureCanvasQTAgg (backend Qt do matplotlib).
+  pip install matplotlib
+
+FONTES (baixar do Google Fonts e embutir em app/theme/fonts/)
+  IM Fell English      https://fonts.google.com/specimen/IM+Fell+English
+                       Fonte principal do corpo de texto. Serif histórica
+                       com aspecto de tipo móvel do século XVII.
+  Special Elite        https://fonts.google.com/specimen/Special+Elite
+                       Títulos e cabeçalhos. Imita máquina de escrever.
+  Courier Prime        https://fonts.google.com/specimen/Courier+Prime
+                       Metadados, timestamps, códigos, labels de UI.
+
+
+================================================================================
+3. ESTRUTURA DE PASTAS
+================================================================================
+
+kosmos/
+├── main.py
+├── requirements.txt
+├── requirements-dev.txt
+├── iniciar.sh
+├── iniciar.bat
+├── README.md
+├── KOSMOS_DEV_BIBLE.txt                  ← Este documento
+│
+├── data/                                 ← TODOS os dados gerados ficam aqui
+│   ├── kosmos.db
+│   ├── settings.json
+│   ├── cache/                            ← Cache de feeds (HTML e imagens)
+│   │   ├── favicons/
+│   │   │   └── <domain_hash>.png
+│   │   └── images/
+│   │       └── <sha256_hash>.<ext>
+│   ├── archive/                          ← Artigos salvos em Markdown
+│   │   └── YYYY-MM/
+│   │       └── <slug>.md
+│   ├── exports/                          ← PDFs exportados
+│   ├── argos_models/                     ← Modelos Argos Translate baixados
+│   │   └── <idioma_origem>_<destino>.argosmodel
+│   └── logs/
+│       └── kosmos.log
+│
+├── app/
+│   ├── core/
+│   │   ├── __init__.py
+│   │   ├── database.py                   ← Engine, migrations, PRAGMA
+│   │   ├── models.py                     ← Todos os modelos SQLAlchemy
+│   │   ├── feed_manager.py               ← CRUD de feeds e categorias
+│   │   ├── feed_fetcher.py               ← Busca RSS (feedparser)
+│   │   ├── reddit_fetcher.py             ← Busca Reddit (praw)
+│   │   ├── rss_fetcher.py                ← Busca RSS genérico, YouTube,
+│   │   │                                    Tumblr, Substack, Mastodon
+│   │   ├── article_scraper.py            ← Web scraping (newspaper4k + BS4)
+│   │   ├── content_filter.py             ← Detecta artigo completo/truncado
+│   │   ├── background_updater.py         ← QThread daemon de atualização
+│   │   ├── archive_manager.py            ← Salvar/exportar em Markdown
+│   │   ├── translator.py                 ← Wrapper do Argos Translate
+│   │   ├── export_pdf.py                 ← Exportação PDF (WeasyPrint)
+│   │   ├── stats.py                      ← Agregação de estatísticas
+│   │   ├── search.py                     ← FTS5 — busca no histórico
+│   │   ├── tags.py                       ← CRUD de tags manuais
+│   │   ├── favicon.py                    ← Download e cache de favicons
+│   │   └── ai_bridge.py                  ← Stub vazio (versão futura)
+│   │
+│   ├── ui/
+│   │   ├── __init__.py
+│   │   ├── main_window.py
+│   │   ├── splash_screen.py
+│   │   ├── sidebar.py                    ← Abas de fichário: feeds e categorias
+│   │   ├── toolbar.py
+│   │   │
+│   │   ├── views/
+│   │   │   ├── __init__.py
+│   │   │   ├── dashboard_view.py         ← Tela inicial (dashboard)
+│   │   │   ├── reader_view.py            ← Painel de leitura (QWebEngineView)
+│   │   │   ├── feed_list_view.py         ← Lista de artigos de um feed
+│   │   │   ├── saved_view.py             ← Artigos salvos/favoritados
+│   │   │   ├── archive_view.py           ← Arquivo Markdown
+│   │   │   ├── stats_view.py             ← Estatísticas de leitura
+│   │   │   └── settings_view.py
+│   │   │
+│   │   ├── widgets/
+│   │   │   ├── __init__.py
+│   │   │   ├── article_card.py           ← Card de artigo na lista
+│   │   │   ├── feed_item.py              ← Item de feed na sidebar
+│   │   │   ├── category_item.py          ← Item de categoria na sidebar
+│   │   │   ├── unread_badge.py           ← Badge de não lidos
+│   │   │   ├── tag_badge.py
+│   │   │   ├── star_rating.py            ← Avaliação (para versão futura)
+│   │   │   └── cosmos_painter.py         ← Decoração cósmica (estrelas SVG)
+│   │   │
+│   │   └── dialogs/
+│   │       ├── __init__.py
+│   │       ├── add_feed_dialog.py        ← Adicionar feed (URL + tipo)
+│   │       ├── add_reddit_dialog.py      ← Adicionar subreddit (requer credenciais)
+│   │       ├── manage_categories.py      ← CRUD de categorias/pastas
+│   │       ├── export_dialog.py
+│   │       └── translate_dialog.py       ← Traduzir artigo selecionado
+│   │
+│   ├── theme/
+│   │   ├── __init__.py
+│   │   ├── theme_manager.py
+│   │   ├── day.qss
+│   │   ├── night.qss
+│   │   ├── reader_day.css                ← CSS do QWebEngineView (leitura diurna)
+│   │   ├── reader_night.css              ← CSS do QWebEngineView (leitura noturna)
+│   │   ├── export_template.html          ← Template HTML para PDF exportado
+│   │   └── fonts/
+│   │       ├── IMFellEnglish-Regular.ttf
+│   │       ├── IMFellEnglish-Italic.ttf
+│   │       ├── SpecialElite-Regular.ttf
+│   │       ├── CourierPrime-Regular.ttf
+│   │       ├── CourierPrime-Bold.ttf
+│   │       └── CourierPrime-Italic.ttf
+│   │
+│   └── utils/
+│       ├── __init__.py
+│       ├── config.py                     ← Leitura/escrita de settings.json
+│       ├── paths.py                      ← Caminhos (NUNCA hardcoded)
+│       ├── validators.py                 ← Validação de URLs de feed
+│       └── logger.py                     ← Logger configurado para data/logs/
+
+
+================================================================================
+4. HIERARQUIA DE DADOS
+================================================================================
+
+  CATEGORIA (pasta de feeds, criada pelo usuário)
+  └── FEED (fonte de conteúdo: RSS, Reddit, YouTube, Tumblr, Substack)
+      └── ARTIGO / POST (item do feed)
+          ├── lido / não lido
+          ├── salvo / favoritado
+          ├── tags manuais
+          ├── conteúdo completo (scraped ou do feed)
+          └── ARQUIVO MARKDOWN (exportação em data/archive/)
+
+  TAGS (globais — aplicam-se a qualquer artigo salvo)
+
+Regras importantes:
+  - Uma categoria pode conter múltiplos feeds de tipos diferentes
+    (RSS + Reddit + YouTube na mesma pasta)
+  - Um artigo sempre pertence a exatamente um feed
+  - Artigos não salvos podem ser purgados do banco após N dias
+    (configurável, padrão: 30 dias para lidos, 90 para não lidos)
+  - Artigos salvos/favoritados NUNCA são purgados automaticamente
+  - O arquivo Markdown é gerado na exportação — não é sincronizado
+    automaticamente. O usuário escolhe quando arquivar.
+  - Tags são criadas globalmente e associadas a artigos salvos
+
+
+================================================================================
+5. FONTES DE CONTEÚDO — TIPOS E ABORDAGENS
+================================================================================
+
+──────────────────────────────────────────────────────────────────────────────
+5.1 RSS GENÉRICO
+──────────────────────────────────────────────────────────────────────────────
+Biblioteca:   feedparser 6.x
+Abordagem:    feedparser.parse(url) — detecta RSS e Atom automaticamente
+Campos usados do feedparser:
+  feed.title, feed.link, feed.image.href (favicon fallback)
+  entry.title, entry.link, entry.summary, entry.content[0].value,
+  entry.published_parsed, entry.author, entry.tags
+Favicon:      baixar de <domínio>/favicon.ico via requests, cache em
+              data/cache/favicons/<domain_hash>.png
+Headers HTTP: sempre enviar User-Agent realista para evitar bloqueios
+  User-Agent: Mozilla/5.0 (compatible; KOSMOS/1.0; +https://github.com/user/kosmos)
+ETag / Last-Modified: salvar no banco por feed e enviar no próximo request
+  para evitar baixar conteúdo inalterado (economia de banda)
+
+──────────────────────────────────────────────────────────────────────────────
+5.2 REDDIT (API OFICIAL)
+──────────────────────────────────────────────────────────────────────────────
+Biblioteca:   praw 7.7.x
+Tipo de app:  "script" no Reddit (não requer aprovação)
+Credenciais:  client_id + client_secret + user_agent
+              Inseridos pelo usuário em Configurações → Reddit
+              Armazenados em settings.json (NÃO no banco)
+              NUNCA commitar credenciais no repositório
+Autenticação: reddit = praw.Reddit(client_id=..., client_secret=...,
+                                   user_agent=..., read_only=True)
+Uso:
+  subreddit = reddit.subreddit("python")
+  for post in subreddit.new(limit=50):
+      post.title, post.url, post.selftext, post.score,
+      post.num_comments, post.created_utc, post.author.name
+
+Campos mapeados para o schema interno:
+  título → entry.title
+  url → entry.link (link externo) ou entry.content (selfpost)
+  selftext → entry.summary (para selfposts)
+  score, num_comments → metadata JSON em articles.extra_json
+  created_utc → entry.published_at
+  subreddit → feed associado
+
+Limite de rate: Reddit API permite 100 requests/min para apps "script".
+               praw gerencia rate limiting automaticamente.
+
+CADASTRO DO APP REDDIT (instruções para o usuário):
+  1. Acessar https://www.reddit.com/prefs/apps
+  2. Clicar em "create another app..."
+  3. Tipo: "script"
+  4. Name: KOSMOS (ou qualquer nome)
+  5. redirect uri: http://localhost:8080
+  6. Copiar client_id (abaixo do nome do app) e client_secret
+
+──────────────────────────────────────────────────────────────────────────────
+5.3 YOUTUBE (RSS)
+──────────────────────────────────────────────────────────────────────────────
+Sem API key necessária. Cada canal tem um feed RSS público:
+  https://www.youtube.com/feeds/videos.xml?channel_id=CHANNEL_ID
+
+Como obter o channel_id:
+  - Da URL do canal: youtube.com/channel/UCxxxxx → ID é UCxxxxx
+  - Da URL @handle: fazer request à página e extrair
+    <meta itemprop="channelId" content="UCxxxxx">
+
+O usuário insere a URL do canal. O sistema extrai o channel_id
+automaticamente via requests + BS4.
+
+Campos do feed YouTube (Atom):
+  entry.yt_videoid (via feedparser namespaces)
+  entry.title, entry.link, entry.published_parsed
+  entry.media_thumbnail[0]['url'] (thumbnail do vídeo)
+  entry.summary (descrição)
+
+Abrir vídeo: sempre no navegador externo (webbrowser.open(url))
+Não há reprodução interna de vídeo no KOSMOS v1.
+
+──────────────────────────────────────────────────────────────────────────────
+5.4 TUMBLR (RSS)
+──────────────────────────────────────────────────────────────────────────────
+Feed RSS nativo: https://<blog>.tumblr.com/rss
+Sem autenticação. Parsear via feedparser normalmente.
+Imagens: extrair da tag <content:encoded> via BS4 se necessário.
+
+──────────────────────────────────────────────────────────────────────────────
+5.5 SUBSTACK (RSS)
+──────────────────────────────────────────────────────────────────────────────
+Feed RSS nativo: https://<newsletter>.substack.com/feed
+Sem autenticação. Parsear via feedparser normalmente.
+Artigos pagos: o RSS entrega apenas o preview. Artigos gratuitos vêm completos.
+O content_filter.py detectará se o conteúdo veio truncado.
+
+──────────────────────────────────────────────────────────────────────────────
+5.6 MASTODON (RSS)
+──────────────────────────────────────────────────────────────────────────────
+Feed RSS nativo: https://<instância>/@<usuário>.rss
+Sem autenticação. Parsear via feedparser normalmente.
+Exemplo: https://mastodon.social/@Gargron.rss
+
+──────────────────────────────────────────────────────────────────────────────
+5.7 TWITTER/X — ADIADO PARA VERSÃO FUTURA
+──────────────────────────────────────────────────────────────────────────────
+A API do Twitter/X é paga desde 2023. Soluções via Nitter não são confiáveis
+(instâncias frequentemente bloqueadas). Toda implementação de Twitter/X
+fica anotada para versão futura quando uma solução estável e gratuita
+estiver disponível.
+Arquivo placeholder: app/core/twitter_fetcher.py (stub vazio com comentário)
+
+
+================================================================================
+6. FUNCIONALIDADES — ESCOPO v1
+================================================================================
+
+──────────────────────────────────────────────────────────────────────────────
+6.1 DASHBOARD PRINCIPAL
+──────────────────────────────────────────────────────────────────────────────
+Tela inicial após a splash screen. Layout fixo (não arrastável no v1).
+
+PAINEL ESQUERDO — Sidebar de Feeds (abas de fichário):
+  Seções na sidebar:
+    ★ Todos os não lidos (contagem total)
+    ★ Salvos / Favoritados
+    ★ Arquivo
+    ─────────────────
+    [CATEGORIAS E FEEDS]
+    Categoria A
+      └── Feed 1 (RSS) ............... [badge N]
+      └── Feed 2 (YouTube) ........... [badge N]
+    Categoria B
+      └── Feed 3 (Reddit/r/sub) ...... [badge N]
+    Sem categoria
+      └── Feed 4 (Substack) .......... [badge N]
+    ─────────────────
+    ★ Estatísticas
+    ★ Configurações
+
+  Comportamento:
+    - Clicar em categoria expande/colapsa os feeds abaixo
+    - Clicar em feed abre feed_list_view com os artigos daquele feed
+    - Clicar em "Todos os não lidos" abre feed_list_view filtrado
+    - Badge mostra contagem de não lidos. Desaparece quando chega a zero.
+    - Abas de fichário: estética de aba de papel com borda superior sépia
+
+ÁREA CENTRAL — Dashboard:
+  WIDGET: Resumo Global
+    Total de não lidos (número grande em destaque)
+    Breakdown por plataforma: X RSS, Y Reddit, Z YouTube...
+    Última atualização: "há X minutos"
+    Botão: "Atualizar agora"
+
+  WIDGET: Feeds com Mais Não Lidos
+    Lista dos 5 feeds com maior contagem de não lidos
+    Favicon + nome + contagem
+
+  WIDGET: Artigos Recentes (últimas 2 horas)
+    Lista compacta com título, fonte, tempo relativo
+    Clicar abre o painel de leitura
+
+  WIDGET: Salvos Recentemente
+    Últimos 5 artigos salvos/favoritados
+
+  WIDGET: Estatística Rápida
+    Artigos lidos hoje / esta semana
+
+  Decoração cósmica:
+    Estrelas desenhadas a lápis de vários tamanhos distribuídas pelo fundo
+    Pequenos amassados simulando pergaminho envelhecido
+    Geradas por cosmos_painter.py (SVG estático, gerado uma vez na abertura)
+
+──────────────────────────────────────────────────────────────────────────────
+6.2 PAINEL DE LEITURA
+──────────────────────────────────────────────────────────────────────────────
+Aberto ao clicar em qualquer artigo. Ocupa a área central, substituindo o
+dashboard. Botão "← Dashboard" para voltar.
+
+Layout do painel de leitura:
+  TOPO:
+    Favicon + nome do feed | Título do artigo (Special Elite)
+    Autor · Data · Tempo estimado de leitura
+    [Botões de ação — ver abaixo]
+
+  CORPO:
+    QWebEngineView renderizando o HTML do artigo
+    CSS: reader_day.css ou reader_night.css (estética sépia)
+    Fonte do corpo: IM Fell English
+    Largura máxima: 720px centralizado
+    Imagens do artigo exibidas inline
+
+  BARRA DE AÇÕES (toolbar horizontal abaixo do título):
+    [Salvar/Favoritar]     — toggle. Ícone de estrela.
+    [Marcar como lido]     — toggle. Muda visual do card na lista.
+    [Buscar artigo completo] — aciona article_scraper.py se disponível.
+                               Ícone muda para indicar status:
+                               ○ não tentado  ◑ parcial  ● completo
+    [Traduzir]             — abre translate_dialog.py
+    [Abrir no navegador]   — webbrowser.open(url)
+    [Exportar PDF]         — export_dialog.py
+    [Arquivar em Markdown] — salva em data/archive/YYYY-MM/<slug>.md
+    [Adicionar tag]        — abre seletor de tags
+
+  RODAPÉ:
+    "← Anterior" e "Próximo →" (navegar entre artigos da lista atual)
+
+──────────────────────────────────────────────────────────────────────────────
+6.3 GERENCIAMENTO DE FEEDS E CATEGORIAS
+──────────────────────────────────────────────────────────────────────────────
+Adicionar feed:
+  add_feed_dialog.py — campo de URL + detecção automática do tipo:
+    - URL de RSS/Atom → tipo RSS
+    - youtube.com/@handle ou youtube.com/channel/... → tipo YouTube
+    - reddit.com/r/subreddit → tipo Reddit (requer credenciais configuradas)
+    - <blog>.tumblr.com → tipo Tumblr
+    - <newsletter>.substack.com → tipo Substack
+    - <instância>/@<usuário> (Mastodon) → tipo Mastodon
+  Ao confirmar: tenta fazer fetch imediato para validar. Se falhar, avisa.
+  Campo: categoria destino (opcional — pode ficar "sem categoria")
+
+Adicionar feed Reddit:
+  add_reddit_dialog.py — campo para nome do subreddit (sem r/)
+  Pré-requisito: credenciais Reddit configuradas em Configurações.
+  Se não configurado, exibe aviso com link para a seção de Configurações.
+
+Gerenciar categorias:
+  manage_categories.py — CRUD completo
+  Criar, renomear, reordenar (drag-and-drop na sidebar), excluir categoria
+  Ao excluir categoria: feeds ficam "sem categoria" (não são excluídos)
+
+Editar feed:
+  Clique direito no feed na sidebar → menu contextual:
+    Renomear, Mover para categoria, Atualizar agora,
+    Marcar todos como lidos, Excluir feed
+
+──────────────────────────────────────────────────────────────────────────────
+6.4 SALVAR E ARQUIVAR
+──────────────────────────────────────────────────────────────────────────────
+SALVAR / FAVORITAR:
+  Toggle via botão na toolbar do painel de leitura ou clique no card da lista.
+  Artigos salvos nunca são purgados automaticamente.
+  Acessados via "Salvos / Favoritados" na sidebar.
+  Tags podem ser adicionadas a qualquer artigo salvo.
+
+ARQUIVO EM MARKDOWN:
+  Ação manual: botão "Arquivar em Markdown" no painel de leitura.
+  Gerado por archive_manager.py.
+  Salvo em: data/archive/YYYY-MM/<slug>.md
+  Slug: gerado a partir do título (lowercase, sem acentos, hífens)
+         ex: "Como a IA mudou o jornalismo" → como-a-ia-mudou-o-jornalismo.md
+
+  Formato do arquivo Markdown gerado:
+  ─────────────────────────────────────
+  ---
+  title: "Título do artigo"
+  source: "Nome do feed"
+  url: "https://..."
+  author: "Autor"
+  date: "2026-03-20"
+  tags: [tag1, tag2]
+  archived_at: "2026-03-20T14:32:00"
+  ---
+
+  # Título do artigo
+
+  [conteúdo do artigo em Markdown, convertido do HTML]
+
+  ---
+  *Arquivado pelo KOSMOS em 20 de março de 2026*
+  ─────────────────────────────────────
+
+  Conversão HTML → Markdown: usar html2text (pip install html2text)
+  Imagens: mantidas como links ![alt](url_original) — não baixadas localmente
+
+  View de arquivo (archive_view.py):
+    Lista todos os arquivos em data/archive/ organizados por mês
+    Busca por título dentro do arquivo
+    Botão para abrir o .md no editor padrão do sistema
+
+──────────────────────────────────────────────────────────────────────────────
+6.5 WEB SCRAPING (busca de artigo completo)
+──────────────────────────────────────────────────────────────────────────────
+Módulo: app/core/article_scraper.py
+Aciona: botão "Buscar artigo completo" no painel de leitura.
+        Também disponível como opção automática nas configurações
+        (scraping automático ao abrir artigos truncados).
+
+Fluxo:
+  1. Verificar content_filter.py: o artigo já veio completo?
+     Se sim: não scraping necessário, conteúdo já exibido.
+  2. Se truncado: tentar newspaper4k.Article(url).download().parse()
+  3. Sucesso: substituir conteúdo exibido. Salvar no banco.
+              Marcar article.scrape_status = 'full'
+  4. Falha (JS necessário ou bloqueio): exibir conteúdo parcial do RSS.
+              Marcar article.scrape_status = 'partial'
+              Exibir aviso: "Não foi possível buscar o artigo completo.
+              [Abrir no navegador]"
+
+FILTRO DE INTEGRIDADE (content_filter.py):
+  Detecta se o conteúdo RSS veio completo ou truncado.
+  Heurísticas:
+    - Texto termina com "..." ou "[...]" → truncado
+    - Campo <content:encoded> ausente, só <description> curta → truncado
+    - Contagem de palavras < 100 com link de "read more" → truncado
+    - Ratio conteúdo/imagens muito baixo → suspeito
+  Resultado: 'full' | 'truncated' | 'unknown'
+  Exibido na interface como ícone discreto no card do artigo.
+
+──────────────────────────────────────────────────────────────────────────────
+6.6 TRADUÇÃO (ARGOS TRANSLATE)
+──────────────────────────────────────────────────────────────────────────────
+Módulo: app/core/translator.py
+Dialog: app/ui/dialogs/translate_dialog.py
+
+Fluxo de tradução:
+  1. Usuário clica em "Traduzir" no painel de leitura.
+  2. translate_dialog.py abre: seletor de idioma de origem (auto-detectar
+     ou manual) + idioma de destino (padrão: definido nas Configurações).
+  3. Verificar se o modelo do par selecionado está em data/argos_models/.
+     Se não: exibir botão "Baixar modelo (~100MB)" com barra de progresso.
+  4. Tradução executada em QThread (não bloqueia a UI).
+  5. Resultado exibido no painel de leitura em nova aba ou substituindo o
+     conteúdo original (configurável).
+
+translator.py:
+  import argostranslate.package
+  import argostranslate.translate
+
+  Instalar modelo: argostranslate.package.install_from_path(caminho)
+  Traduzir: argostranslate.translate.translate(texto, from_code, to_code)
+
+Gerenciar modelos (Configurações):
+  Listar modelos disponíveis online (endpoint do Argos)
+  Mostrar modelos instalados em data/argos_models/
+  Botão baixar / remover por par de idiomas
+  Download em QThread com barra de progresso
+
+──────────────────────────────────────────────────────────────────────────────
+6.7 FILTROS E BUSCA
+──────────────────────────────────────────────────────────────────────────────
+FILTROS na feed_list_view (toolbar horizontal acima da lista):
+  Por data:   Hoje | Esta semana | Este mês | Todos
+  Por fonte:  dropdown com todos os feeds da categoria atual
+  Por tag:    multi-select com tags existentes
+  Status:     Todos | Não lidos | Lidos | Salvos
+  Integridade: Todos | Completos | Truncados
+
+BUSCA NO HISTÓRICO:
+  Atalho: Ctrl+K (barra de busca flutuante)
+  Motor: SQLite FTS5 indexando título + conteúdo de todos os artigos
+  Resultados agrupados por feed
+  Filtro de data nos resultados
+  Clicar no resultado abre o painel de leitura com o artigo
+
+──────────────────────────────────────────────────────────────────────────────
+6.8 ATUALIZAÇÃO AUTOMÁTICA EM BACKGROUND
+──────────────────────────────────────────────────────────────────────────────
+Módulo: app/core/background_updater.py
+Implementação: QThread daemon iniciado junto com a aplicação
+
+Comportamento:
+  - Atualiza todos os feeds no intervalo configurado (padrão: 30 minutos)
+  - Respeita ETag/Last-Modified para não re-baixar feeds inalterados
+  - Fila de updates: um feed por vez, com delay de 2s entre cada
+    (evita bloquear o servidor de origem)
+  - Emite sinal Qt ao concluir atualização de cada feed
+    → badge da sidebar é atualizado em tempo real
+  - Erros (timeout, DNS, HTTP 4xx/5xx) logados em data/logs/kosmos.log
+    e mostrados como ícone de aviso discreta no feed na sidebar
+  - Botão "Atualizar agora" no dashboard força update imediato de todos
+
+──────────────────────────────────────────────────────────────────────────────
+6.9 EXPORTAÇÃO (PDF E MARKDOWN)
+──────────────────────────────────────────────────────────────────────────────
+PDF (WeasyPrint):
+  Escopo: artigo individual ou lista de artigos salvos
+  Template: app/theme/export_template.html
+  CSS: estética sépia — fundo off-white, fontes IM Fell English e Courier Prime
+  Destino padrão: data/exports/ (configurável em Configurações)
+  Nome do arquivo: <slug-do-título>_YYYY-MM-DD.pdf
+  ATENÇÃO Windows: requer GTK3 runtime (ver seção 14)
+
+MARKDOWN:
+  Descrito em detalhe na seção 6.4 — Arquivo em Markdown.
+
+──────────────────────────────────────────────────────────────────────────────
+6.10 ESTATÍSTICAS DE LEITURA
+──────────────────────────────────────────────────────────────────────────────
+View: stats_view.py com gráficos matplotlib (FigureCanvasQTAgg)
+
+Métricas:
+  Artigos lidos por dia (gráfico de barras — últimos 30 dias)
+  Artigos lidos por feed/fonte (barras horizontais)
+  Distribuição por plataforma (pizza: RSS, Reddit, YouTube, etc.)
+  Artigos salvos por mês (linha)
+  Total acumulado: artigos lidos, salvos, arquivados
+
+Filtros:
+  Período: última semana | último mês | último ano | todo o período
+
+──────────────────────────────────────────────────────────────────────────────
+6.11 CONFIGURAÇÕES
+──────────────────────────────────────────────────────────────────────────────
+settings_view.py — seções:
+
+APARÊNCIA:
+  Tema: Diurno / Noturno (toggle com ícone sol/lua)
+  Tamanho da fonte no leitor (slider: 14px → 24px)
+
+FEEDS:
+  Intervalo de atualização automática:
+    15 min | 30 min | 1 hora | 2 horas | Manual
+  Purgar artigos lidos após: 15 | 30 | 60 | 90 | Nunca (dias)
+  Purgar artigos não lidos após: 30 | 60 | 90 | 180 | Nunca (dias)
+  Scraping automático: Ativado / Desativado
+    (tenta buscar artigo completo automaticamente ao abrir truncados)
+
+REDDIT:
+  client_id (campo de texto, mascarado)
+  client_secret (campo de texto, mascarado)
+  user_agent (preenchido automaticamente: "KOSMOS/1.0")
+  Botão: Testar conexão
+
+TRADUÇÃO:
+  Idioma padrão de destino (dropdown)
+  Modelos instalados: lista com botão Remover por par
+  Modelos disponíveis: lista com botão Baixar (download em background)
+
+EXPORTAÇÃO:
+  Pasta padrão de exportação (PDF): seletor de pasta
+  Pasta padrão de exportação (Markdown / Arquivo): data/archive/ (fixo)
+
+AVANÇADO:
+  Limpar cache de imagens (data/cache/images/)
+  Limpar cache de favicons (data/cache/favicons/)
+  Exportar banco de dados (cópia de data/kosmos.db)
+  Visualizar pasta de dados (abre data/ no explorador do sistema)
+
+
+================================================================================
+7. FUNCIONALIDADES PARA VERSÃO FUTURA
+================================================================================
+
+  [ ] IA: análise de artigos via Ollama (stub: app/core/ai_bridge.py)
+  [ ] Twitter/X: quando solução gratuita e estável disponível
+  [ ] Playwright: scraping de sites com JavaScript pesado
+  [ ] Modo leitura offline: download de artigos para leitura sem internet
+  [ ] Filtros de palavras-chave: ocultar automaticamente artigos com certas
+      palavras (ex: ocultar spoilers)
+  [ ] Regras de auto-tag: marcar automaticamente com tag se contém palavra-chave
+  [ ] Importar/exportar feeds via OPML (formato padrão de leitores RSS)
+  [ ] Notificações nativas (plyer) para novos artigos em feeds prioritários
+  [ ] Subreddit multis (agrupamentos de subreddits na API do Reddit)
+  [ ] Mastodon com autenticação (para perfis privados)
+  [ ] Podcast support (RSS de audio com player interno)
+  [ ] Integração com OGMA: salvar artigo diretamente como página do OGMA
+
+
+================================================================================
+8. BANCO DE DADOS — SCHEMA COMPLETO
+================================================================================
+
+Arquivo: data/kosmos.db
+Engine: SQLite com PRAGMA foreign_keys = ON
+ORM: SQLAlchemy 2.0 (modelos em app/core/models.py)
+Migrations: Alembic ou migration manual via database.py
+
+──────────────────────────────────────────────────────────────────────────────
+TABELA: categories
+──────────────────────────────────────────────────────────────────────────────
+  id            INTEGER PRIMARY KEY AUTOINCREMENT
+  name          TEXT NOT NULL
+  position      INTEGER DEFAULT 0        ← ordem na sidebar
+  created_at    DATETIME DEFAULT CURRENT_TIMESTAMP
+
+──────────────────────────────────────────────────────────────────────────────
+TABELA: feeds
+──────────────────────────────────────────────────────────────────────────────
+  id            INTEGER PRIMARY KEY AUTOINCREMENT
+  category_id   INTEGER REFERENCES categories(id) ON DELETE SET NULL
+  name          TEXT NOT NULL             ← nome exibido (editável)
+  url           TEXT NOT NULL             ← URL do feed RSS ou handle
+  feed_type     TEXT NOT NULL             ← 'rss' | 'reddit' | 'youtube'
+                                             | 'tumblr' | 'substack'
+                                             | 'mastodon' | 'twitter'
+  favicon_path  TEXT                      ← caminho relativo em data/cache/
+  etag          TEXT                      ← para cache HTTP
+  last_modified TEXT                      ← para cache HTTP
+  last_fetched  DATETIME
+  last_error    TEXT                      ← última mensagem de erro
+  position      INTEGER DEFAULT 0         ← ordem dentro da categoria
+  active        INTEGER DEFAULT 1         ← 0 = pausado
+  created_at    DATETIME DEFAULT CURRENT_TIMESTAMP
+
+──────────────────────────────────────────────────────────────────────────────
+TABELA: articles
+──────────────────────────────────────────────────────────────────────────────
+  id              INTEGER PRIMARY KEY AUTOINCREMENT
+  feed_id         INTEGER NOT NULL REFERENCES feeds(id) ON DELETE CASCADE
+  guid            TEXT NOT NULL           ← identificador único do item no feed
+  title           TEXT NOT NULL
+  url             TEXT
+  author          TEXT
+  published_at    DATETIME
+  fetched_at      DATETIME DEFAULT CURRENT_TIMESTAMP
+  summary         TEXT                    ← conteúdo do RSS (pode ser truncado)
+  content_full    TEXT                    ← conteúdo scraped (completo)
+  content_type    TEXT DEFAULT 'html'     ← 'html' | 'text'
+  scrape_status   TEXT DEFAULT 'none'     ← 'none' | 'full' | 'partial' | 'failed'
+  integrity       TEXT DEFAULT 'unknown'  ← 'full' | 'truncated' | 'unknown'
+  is_read         INTEGER DEFAULT 0
+  is_saved        INTEGER DEFAULT 0
+  read_at         DATETIME
+  saved_at        DATETIME
+  extra_json      TEXT                    ← JSON com dados extras por plataforma
+                                             Reddit: score, num_comments, flair
+                                             YouTube: thumbnail_url, duration
+  UNIQUE(feed_id, guid)
+
+──────────────────────────────────────────────────────────────────────────────
+TABELA: tags
+──────────────────────────────────────────────────────────────────────────────
+  id            INTEGER PRIMARY KEY AUTOINCREMENT
+  name          TEXT NOT NULL UNIQUE
+  color         TEXT DEFAULT '#8B7355'    ← hex
+
+──────────────────────────────────────────────────────────────────────────────
+TABELA: article_tags
+──────────────────────────────────────────────────────────────────────────────
+  article_id    INTEGER REFERENCES articles(id) ON DELETE CASCADE
+  tag_id        INTEGER REFERENCES tags(id) ON DELETE CASCADE
+  PRIMARY KEY (article_id, tag_id)
+
+──────────────────────────────────────────────────────────────────────────────
+TABELA: read_sessions
+──────────────────────────────────────────────────────────────────────────────
+  id            INTEGER PRIMARY KEY AUTOINCREMENT
+  article_id    INTEGER REFERENCES articles(id) ON DELETE SET NULL
+  feed_id       INTEGER REFERENCES feeds(id) ON DELETE SET NULL
+  started_at    DATETIME DEFAULT CURRENT_TIMESTAMP
+  duration_sec  INTEGER                   ← tempo de leitura em segundos
+                                             (estimado: timer desde abertura
+                                             até fechamento do painel)
+
+──────────────────────────────────────────────────────────────────────────────
+TABELA: fts_articles (FTS5 Virtual Table)
+──────────────────────────────────────────────────────────────────────────────
+  CREATE VIRTUAL TABLE fts_articles USING fts5(
+      title, content, content='articles', content_rowid='id'
+  );
+  Triggers para manter sincronizado:
+    AFTER INSERT ON articles → INSERT INTO fts_articles
+    AFTER UPDATE ON articles → UPDATE fts_articles
+    AFTER DELETE ON articles → DELETE FROM fts_articles
+
+
+================================================================================
+9. SISTEMA DE DESIGN — BÍBLIA VISUAL
+================================================================================
+
+──────────────────────────────────────────────────────────────────────────────
+9.1 CONCEITO E INSPIRAÇÃO
+──────────────────────────────────────────────────────────────────────────────
+Estética de papel envelhecido e máquina de escrever. Jornais e revistas
+antigas. Pergaminhos levemente amassados. Estrelas desenhadas a lápis sobre
+papel off-white envelhecido. Sem modernidade — como se o programa tivesse
+sido criado num scriptorium medieval com tecnologia de máquina de escrever.
+
+A versão noturna (night mode) mantém a mesma estética, mas com o papel
+invertendo para tons escuros de sépia e tinta, como um negativo fotográfico
+antigo ou tinta sobre pergaminho escuro.
+
+──────────────────────────────────────────────────────────────────────────────
+9.2 PALETA DE CORES
+──────────────────────────────────────────────────────────────────────────────
+TEMA DIURNO (day.qss):
+
+  Background principal:    #f0e8d5   (off-white envelhecido)
+  Background secundário:   #e8ddc8   (bege levemente mais escuro)
+  Background de cards:     #ece4cf   (entre os dois)
+  Background hover:        #e0d4bc   (hover em itens de lista)
+  Background selecionado:  #d4c4a0   (item selecionado na sidebar)
+
+  Texto principal:         #2C2416   (quase preto — tinta escura)
+  Texto secundário:        #6B5A3E   (marrom médio)
+  Texto terciário:         #9C8B6E   (marrom claro — metadados)
+  Texto desabilitado:      #C4B49A   (muito claro)
+
+  Acento / Destaque:       #8B7355   (sépia — bordas ativas, badges)
+  Acento hover:            #7A6245   (sépia mais escuro)
+
+  Cursor piscante:         #b8860b   (dourado envelhecido)
+  Seleção de texto:        #d4c4a0   (bege selecionado)
+
+  Borda principal:         #C4B49A   (separadores suaves)
+  Borda de destaque:       #8B7355   (sépia — items ativos)
+
+  Badges não lidos:        #8B3A2A   (vermelho sépia)
+  Badge texto:             #f0e8d5   (off-white)
+
+  Estrelas (decoração):    #5C4E3A   (grafite escuro — lápis sobre papel)
+  Amassados (decoração):   rgba(44, 36, 22, 0.06) (sombra muito suave)
+
+TEMA NOTURNO (night.qss):
+
+  Background principal:    #1C1610   (sépia muito escuro)
+  Background secundário:   #231D14   (um pouco mais claro)
+  Background de cards:     #2A2218   (cards e painéis)
+  Background hover:        #332B1E   (hover)
+  Background selecionado:  #3D3226   (selecionado)
+
+  Texto principal:         #E8D9BE   (creme envelhecido)
+  Texto secundário:        #B8A882   (bege médio)
+  Texto terciário:         #7A6E58   (bege escuro — metadados)
+  Texto desabilitado:      #4A4035   (muito escuro)
+
+  Acento / Destaque:       #A08860   (sépia dourado)
+  Acento hover:            #B89870   (mais claro)
+
+  Cursor piscante:         #b8860b   (dourado envelhecido — idêntico ao diurno)
+  Seleção de texto:        #3D3226   (escuro selecionado)
+
+  Borda principal:         #3D3226   (separadores suaves)
+  Borda de destaque:       #A08860   (sépia dourado)
+
+  Badges não lidos:        #8B3A2A   (vermelho sépia — idêntico ao diurno)
+  Badge texto:             #E8D9BE   (creme)
+
+  Estrelas (decoração):    #C4B49A   (grafite claro sobre escuro)
+  Amassados (decoração):   rgba(232, 217, 190, 0.04) (levíssima sombra clara)
+
+──────────────────────────────────────────────────────────────────────────────
+9.3 TIPOGRAFIA
+──────────────────────────────────────────────────────────────────────────────
+Todas as fontes embutidas em app/theme/fonts/ e carregadas via QFontDatabase.
+
+IM Fell English (serif histórica):
+  Uso: corpo do texto dos artigos no painel de leitura
+       texto de resumos nos cards de artigo
+       conteúdo principal em geral
+  Tamanho padrão no leitor: 18px (ajustável 14px–24px)
+  Line-height no leitor: 1.8
+
+Special Elite (máquina de escrever):
+  Uso: títulos de artigos (cards e painel de leitura)
+       nome do feed na sidebar
+       títulos de seção no dashboard
+       nome do app na splash screen
+  Tamanho: 16px–24px conforme contexto
+
+Courier Prime (monospace, máquina de escrever limpa):
+  Uso: metadados (data, autor, fonte)
+       badges e contadores
+       timestamps
+       labels de UI (botões, abas)
+       texto nas configurações
+  Tamanho: 12px–14px
+
+Fallbacks (caso as fontes não carreguem):
+  IM Fell English → "Georgia", serif
+  Special Elite → "Courier New", monospace
+  Courier Prime → "Courier New", monospace
+
+──────────────────────────────────────────────────────────────────────────────
+9.4 GEOMETRIA E BORDAS
+──────────────────────────────────────────────────────────────────────────────
+border-radius: 2px em todos os elementos sem exceção
+               Cantos quase retos — nenhum elemento arredondado
+               Esta é uma regra inegociável da estética
+
+Bordas: 1px solid, usando as cores de borda definidas na paleta
+        Nunca sombras modernas (box-shadow com blur alto)
+        Sombras permitidas: apenas drop-shadow sutil simulando papel
+          box-shadow: 1px 1px 3px rgba(44, 36, 22, 0.15)
+
+Espaçamento interno (padding):
+  Cards de artigo: 12px vertical, 16px horizontal
+  Sidebar items: 8px vertical, 12px horizontal
+  Painel de leitura: 40px nas laterais (cria coluna de leitura confortável)
+  Dialogs: 24px
+
+──────────────────────────────────────────────────────────────────────────────
+9.5 DECORAÇÃO CÓSMICA (cosmos_painter.py)
+──────────────────────────────────────────────────────────────────────────────
+Gerado via SVG em Python. Aparece no background do dashboard e discretamente
+em outros fundos.
+
+Estrelas desenhadas a lápis:
+  Tipos: 4 variantes (4 pontas simétricas, 5 pontas irregular,
+         6 pontas clássica, ponto com halo difuso)
+  Tamanhos: 4px a 18px (distribuição aleatória com seed baseada na data)
+  Opacidade: 0.15 a 0.45 (as maiores são mais visíveis)
+  Cor: #5C4E3A (diurno) / #C4B49A (noturno)
+  Traço: irregular, imitando lápis (pequenas variações no path)
+  Distribuição: nunca no centro do dashboard (reservado para widgets)
+                concentradas nas bordas e espaços entre widgets
+
+Amassados no pergaminho:
+  Simulados por gradientes radiais muito suaves em cantos e bordas
+  Opacity máxima: 0.08 — imperceptíveis mas presentes
+  5 a 8 por tela, distribuídos aleatoriamente
+
+Papel dobrado nos cantos:
+  Nos 4 cantos da janela principal: pequeno triângulo SVG simulando dobra
+  Tamanho: 20×20px
+  Cor interna: levemente mais escura que o background (#d4c4a0 diurno)
+  Sem interatividade — puramente decorativo
+
+──────────────────────────────────────────────────────────────────────────────
+9.6 ANIMAÇÕES
+──────────────────────────────────────────────────────────────────────────────
+Todas as animações são discretas e rápidas — nunca chamativas.
+
+QPropertyAnimation usado para:
+  Entrada de novos cards na lista: fade-in de 150ms (opacity 0 → 1)
+  Abertura do painel de leitura: slide da direita, 200ms, easing OutCubic
+  Abertura/fechamento de categoria na sidebar: expand/collapse 120ms
+  Badges atualizando: pulso suave (scale 1.0 → 1.15 → 1.0, 200ms)
+
+Cursor piscante (#b8860b):
+  Implementado via QTimer em campos de busca e inputs de texto
+  Intervalo: 530ms (ligeiramente irregular para parecer analógico)
+
+──────────────────────────────────────────────────────────────────────────────
+9.7 SIDEBAR — ABAS DE FICHÁRIO
+──────────────────────────────────────────────────────────────────────────────
+Inspiração: abas de fichário ou separadores de arquivo físico.
+  - Cada seção principal (Salvos, Categorias, Stats, Config) tem uma aba
+    que parece uma lingueta de papel colada na lateral
+  - A aba ativa tem borda superior sépia mais espessa e background levemente
+    mais claro que o restante da sidebar
+  - Sem border-radius expressivo — a aba é quase retangular (radius: 2px)
+  - Texto das abas: Special Elite, uppercase, 11px
+
+──────────────────────────────────────────────────────────────────────────────
+9.8 SPLASH SCREEN
+──────────────────────────────────────────────────────────────────────────────
+  Janela sem borda (frameless), centralizada
+  Dimensão: 480×320px
+  Background: #f0e8d5 (diurno) — sempre diurno independente do tema
+  Nome "KOSMOS" em Special Elite, 48px, centrado
+  Subtítulo em Courier Prime 13px: "Agregador de Notícias e Feeds"
+  Decoração: estrelas cósmicas distribuídas pelo fundo (cosmos_painter.py)
+  Barra de progresso sépia na parte inferior (animada durante carregamento)
+  Duração: até o carregamento completar (mínimo 1.5s para não piscar)
+
+
+================================================================================
+10. BIBLIOTECAS — GUIA DETALHADO
+================================================================================
+
+──────────────────────────────────────────────────────────────────────────────
+feedparser 6.0.x
+──────────────────────────────────────────────────────────────────────────────
+Site:          https://feedparser.readthedocs.io/
+Instalação:    pip install feedparser
+Uso básico:
+  import feedparser
+  d = feedparser.parse('https://example.com/feed.xml')
+  d.feed.title          → nome do feed
+  d.feed.link           → site do feed
+  d.entries             → lista de itens
+  d.entries[0].title    → título do item
+  d.entries[0].link     → URL do item
+  d.entries[0].summary  → resumo (pode ser HTML)
+  d.entries[0].content  → lista de conteúdos, pegar [0].value
+  d.entries[0].published_parsed → struct_time (converter com time.mktime)
+  d.entries[0].author   → autor
+  d.entries[0].tags     → lista de dicts com 'term'
+  d.headers.get('etag') → ETag para cache
+  d.headers.get('last-modified') → Last-Modified para cache
+
+Comportamento com erros:
+  feedparser NUNCA lança exceção. Retorna dict com bozo=True se feed
+  malformado. Sempre verificar d.bozo antes de processar.
+
+──────────────────────────────────────────────────────────────────────────────
+praw 7.7.x (Reddit)
+──────────────────────────────────────────────────────────────────────────────
+Site:          https://praw.readthedocs.io/
+Instalação:    pip install praw
+Uso básico:
+  import praw
+  reddit = praw.Reddit(
+      client_id="SEU_CLIENT_ID",
+      client_secret="SEU_CLIENT_SECRET",
+      user_agent="KOSMOS/1.0"
+  )
+  sub = reddit.subreddit("python")
+  for post in sub.new(limit=50):
+      post.title, post.url, post.selftext
+      post.score, post.num_comments
+      post.created_utc  # timestamp Unix
+      post.is_self      # True = selfpost (texto), False = link externo
+      post.thumbnail    # URL da thumbnail (pode ser 'self' ou 'default')
+
+Autenticação read-only: sem login de usuário. Apenas client_id e secret.
+Rate limiting: gerenciado automaticamente pelo praw.
+
+──────────────────────────────────────────────────────────────────────────────
+newspaper4k 0.9.x
+──────────────────────────────────────────────────────────────────────────────
+Site:          https://newspaper4k.readthedocs.io/
+Instalação:    pip install newspaper4k
+Uso básico:
+  from newspaper import Article
+  article = Article('https://example.com/artigo')
+  article.download()
+  article.parse()
+  article.title       → título extraído
+  article.text        → corpo em texto puro
+  article.html        → HTML completo
+  article.authors     → lista de autores
+  article.publish_date → datetime
+  article.top_image   → URL da imagem principal
+
+Tratar exceção:
+  from newspaper import ArticleException
+  try:
+      article.download()
+      article.parse()
+  except ArticleException as e:
+      # falha de download ou parse
+
+Timeout: Article(url, request_timeout=10)
+
+──────────────────────────────────────────────────────────────────────────────
+argostranslate 1.9.x
+──────────────────────────────────────────────────────────────────────────────
+Site:          https://argos-translate.readthedocs.io/
+Instalação:    pip install argostranslate
+Uso básico:
+  # Listar pacotes disponíveis online
+  from argostranslate import package
+  package.update_package_index()
+  available = package.get_available_packages()
+
+  # Filtrar por par de idiomas
+  pkg = next(p for p in available
+             if p.from_code == 'en' and p.to_code == 'pt')
+  pkg.download()
+  package.install_from_path(pkg.download())
+
+  # Traduzir
+  from argostranslate import translate
+  result = translate.translate("Hello world", "en", "pt")
+
+Códigos de idioma: ISO 639-1 (en, pt, es, fr, de, it, ja, zh, ru...)
+Modelos: ~100MB por par. Salvar em data/argos_models/ para controle manual.
+
+ATENÇÃO: o download de pacotes pelo argostranslate usa o diretório padrão
+do sistema. Para salvar em data/argos_models/, fazer download manual via
+requests e instalar com package.install_from_path(caminho_local).
+
+──────────────────────────────────────────────────────────────────────────────
+WeasyPrint 62.x
+──────────────────────────────────────────────────────────────────────────────
+Site:          https://doc.courtbouillon.org/weasyprint/
+Instalação:    pip install weasyprint
+Uso básico:
+  from weasyprint import HTML, CSS
+  HTML(string=html_content).write_pdf(
+      'data/exports/artigo.pdf',
+      stylesheets=[CSS(filename='app/theme/export_template.css')]
+  )
+ATENÇÃO Windows: requer GTK3 runtime instalado ANTES do Python.
+                 Ver instruções completas na seção 14.
+
+──────────────────────────────────────────────────────────────────────────────
+html2text (para arquivo Markdown)
+──────────────────────────────────────────────────────────────────────────────
+Site:          https://github.com/Alir3z4/html2text
+Instalação:    pip install html2text
+Uso básico:
+  import html2text
+  h = html2text.HTML2Text()
+  h.ignore_links = False
+  h.ignore_images = False
+  h.body_width = 0  # sem quebra de linha automática
+  markdown = h.handle(html_string)
+
+──────────────────────────────────────────────────────────────────────────────
+PyQt6 + PyQt6-WebEngine
+──────────────────────────────────────────────────────────────────────────────
+  pip install PyQt6 PyQt6-WebEngine
+  ATENÇÃO: instalar PyQt6-WebEngine SEPARADAMENTE — não vem com PyQt6.
+  QWebEngineView usado para: painel de leitura de artigos (HTML)
+  Comunicação Python ↔ JS: QWebChannel (não necessário no v1 do leitor,
+  mas disponível para funcionalidades futuras)
+
+
+================================================================================
+11. ARQUITETURA TÉCNICA — DECISÕES IMPORTANTES
+================================================================================
+
+SEPARAÇÃO FETCH vs. UI:
+  Toda a lógica de fetch (feedparser, praw, requests) fica em app/core/.
+  A UI em app/ui/ NUNCA importa feedparser, praw ou requests diretamente.
+  Comunicação via sinais Qt (pyqtSignal) e objetos de dados.
+
+BACKGROUND UPDATER:
+  QThread com loop de atualização. Emite sinais para a UI.
+  NÃO usar threading nativo do Python com Qt — causa crashes.
+  Toda atualização de widget da UI deve vir do thread principal via signal.
+
+CAMINHO DOS ARQUIVOS:
+  NUNCA usar strings hardcoded para caminhos.
+  Sempre usar pathlib.Path via app/utils/paths.py.
+  paths.py resolve caminhos relativos à pasta raiz do projeto em tempo
+  de execução (dirname de main.py).
+
+BANCO DE DADOS:
+  Uma única conexão SQLAlchemy por thread.
+  Para o background_updater.py (QThread): criar sessão própria com
+  sessionmaker() no início do thread e fechar ao terminar.
+
+PURGA DE ARTIGOS:
+  Executada ao iniciar o app e uma vez por dia.
+  NUNCA purgar artigos com is_saved=1.
+  Usar DELETE ... WHERE fetched_at < DATE('now', '-N days')
+  AND is_saved = 0 AND is_read = 1
+
+CACHE DE IMAGENS:
+  Favicons: baixar uma vez por domínio, guardar por hash do domínio.
+  Imagens de capa: guardar por hash SHA256 da URL.
+  Nunca referenciar URLs externas diretamente no display (falha offline).
+
+
+================================================================================
+12. ARMADILHAS TÉCNICAS CONHECIDAS
+================================================================================
+
+PYQT6 + WINDOWS — MODAL FOCUS:
+  Mesma armadilha do OGMA/StudyFlow. Overlays com onClick para fechar
+  + stopPropagation interferem com foco de inputs.
+  Padrão correto: onMouseDown={e => { if(e.target===e.currentTarget) fechar() }}
+  No PyQt6: usar mousePressEvent, verificar se o clique foi no overlay
+  e não em um filho antes de fechar.
+
+QWEBENGINEVIEW — TELA BRANCA NO WINDOWS:
+  Causa: ausência do VC++ Redistributable ou versão errada do PyQt6-WebEngine.
+  Solução: instalar VC++ Redistributable + garantir que PyQt6-WebEngine
+  está na mesma versão que PyQt6.
+
+FEEDPARSER — ENCODING:
+  Alguns feeds retornam encoding incorreto no header HTTP.
+  feedparser lida com isso, mas se o texto aparecer quebrado:
+  feedparser.parse(url, response_headers={'content-type': 'text/xml; charset=utf-8'})
+
+NEWSPAPER4K — SITES COM JAVASCRIPT:
+  newspaper4k usa requests internamente — não executa JS.
+  Sites que carregam conteúdo via JS retornarão texto vazio ou parcial.
+  Detectar via: if len(article.text) < 200: marcar como 'partial'
+
+ARGOS TRANSLATE — PRIMEIRO USO:
+  Na primeira vez que o usuário tenta traduzir, os modelos não estão
+  instalados. Sempre verificar antes de chamar translate.translate()
+  se o par de idiomas está disponível localmente.
+  translate.get_installed_languages() retorna a lista.
+
+PRAW — RATE LIMITING:
+  praw gerencia automaticamente, mas pode pausar até 60 segundos em
+  caso de rate limit. Sempre rodar em QThread para não bloquear a UI.
+
+WEASYPRINT — GTK3 NO WINDOWS:
+  WeasyPrint depende de GTK3 para renderização. No Windows, o GTK3
+  runtime DEVE ser instalado antes da exportação ser usada.
+  Se GTK3 não estiver instalado, capturar o erro e exibir instruções.
+
+
+================================================================================
+13. INSTRUÇÕES DE SETUP — CachyOS
+================================================================================
+
+PRÉ-REQUISITOS:
+  sudo pacman -S python python-pip nodejs npm
+  sudo pacman -S gtk3 cairo pango gdk-pixbuf2   ← para WeasyPrint
+  # Python 3.11 no CachyOS:
+  # verificar: python --version
+  # se for 3.13+: usar pyenv para instalar 3.11 ou 3.12
+
+SETUP DO PROJETO:
+  git clone <repo> kosmos && cd kosmos
+  python -m venv venv
+  source venv/bin/activate
+  pip install -r requirements.txt
+
+CONTEÚDO DO requirements.txt:
+  PyQt6==6.7.*
+  PyQt6-WebEngine==6.7.*
+  SQLAlchemy==2.0.*
+  feedparser==6.0.*
+  requests==2.31.*
+  beautifulsoup4==4.12.*
+  lxml==5.*
+  newspaper4k==0.9.*
+  praw==7.7.*
+  argostranslate==1.9.*
+  weasyprint==62.*
+  Pillow==10.*
+  matplotlib==3.8.*
+  html2text
+
+EXECUTAR:
+  source venv/bin/activate
+  python main.py
+
+  Ou: ./iniciar.sh (cria o venv automaticamente se não existir)
+
+INICIAR.SH:
+  #!/bin/bash
+  cd "$(dirname "$0")"
+  if [ ! -d "venv" ]; then
+      python -m venv venv
+      source venv/bin/activate
+      pip install -r requirements.txt
+  else
+      source venv/bin/activate
+  fi
+  python main.py
+
+
+================================================================================
+14. INSTRUÇÕES DE SETUP — Windows 10
+================================================================================
+
+PRÉ-REQUISITOS (instalar nesta ordem):
+  1. GTK3 runtime (OBRIGATÓRIO para WeasyPrint):
+     https://github.com/tschoonj/GTK-for-Windows-Runtime-Environment-Installer
+     Baixar o instalador .exe e executar. Reiniciar após instalação.
+  2. Python 3.11+:
+     https://python.org — marcar "Add Python to PATH" durante instalação
+     VERIFICAR: python --version (deve ser 3.11.x ou 3.12.x)
+  3. Node.js 20 LTS (não necessário no KOSMOS v1, mas manter por consistência):
+     https://nodejs.org
+  4. Visual C++ Build Tools (necessário para compilar extensões C):
+     https://visualstudio.microsoft.com/visual-cpp-build-tools/
+     Selecionar: "Desktop development with C++"
+
+SETUP DO PROJETO:
+  cd C:\caminho\para\kosmos
+  python -m venv venv
+  venv\Scripts\activate
+  pip install -r requirements.txt
+
+EXECUTAR:
+  venv\Scripts\activate
+  python main.py
+
+  Ou: iniciar.bat (duplo clique)
+
+INICIAR.BAT:
+  @echo off
+  cd /d "%~dp0"
+  if not exist "venv\" (
+      python -m venv venv
+      call venv\Scripts\activate
+      pip install -r requirements.txt
+  ) else (
+      call venv\Scripts\activate
+  )
+  python main.py
+  pause
+
+PROBLEMAS COMUNS:
+  Tela branca no leitor:
+    → instalar VC++ Redistributable (x64)
+    → garantir PyQt6 e PyQt6-WebEngine na mesma versão
+  WeasyPrint falha:
+    → GTK3 não instalado ou não no PATH
+    → reinstalar GTK3 runtime e reiniciar o PC
+  Erro de importação de lxml:
+    → pip install lxml --only-binary=:all:
+  newspaper4k não instala:
+    → garantir Visual C++ Build Tools instalado
+
+ATALHO NO MENU INICIAR (PowerShell):
+  $ws = New-Object -ComObject WScript.Shell
+  $s = $ws.CreateShortcut("$env:APPDATA\Microsoft\Windows\Start Menu\Programs\KOSMOS.lnk")
+  $s.TargetPath = "C:\caminho\para\kosmos\iniciar.bat"
+  $s.WorkingDirectory = "C:\caminho\para\kosmos"
+  $s.Save()
+
+
+================================================================================
+15. ROADMAP DE DESENVOLVIMENTO (FASES)
+================================================================================
+
+FASE 1 — FUNDAÇÃO
+  [ ] Estrutura de pastas completa
+  [ ] utils/paths.py, config.py, logger.py
+  [ ] Schema do banco + PRAGMA + models.py (SQLAlchemy)
+  [ ] Carregamento de fontes (QFontDatabase)
+  [ ] Sistema de temas: day.qss + night.qss + theme_manager.py
+  [ ] main.py + MainWindow esqueleto
+  [ ] Splash screen com cosmos básico (cosmos_painter.py)
+  [ ] Sidebar estática com abas de fichário (sem dados)
+
+FASE 2 — FEEDS RSS BÁSICO
+  [ ] feed_manager.py: CRUD de feeds e categorias
+  [ ] rss_fetcher.py: feedparser básico
+  [ ] background_updater.py: QThread de atualização automática
+  [ ] feed_list_view.py: lista de artigos de um feed
+  [ ] article_card.py: widget de card de artigo
+  [ ] Sidebar dinâmica: feeds, categorias, badges de não lidos
+  [ ] Marcar como lido/não lido
+  [ ] Purgação automática de artigos antigos
+
+FASE 3 — PAINEL DE LEITURA
+  [ ] reader_view.py: QWebEngineView com CSS sépia
+  [ ] reader_day.css + reader_night.css
+  [ ] Navegação anterior/próximo entre artigos
+  [ ] Toolbar de ações (salvar, marcar, abrir no navegador)
+  [ ] content_filter.py: detectar artigo completo/truncado
+  [ ] article_scraper.py: newspaper4k + BeautifulSoup
+  [ ] Botão "Buscar artigo completo"
+
+FASE 4 — SALVAR, TAGS E ARQUIVO
+  [ ] Sistema de favoritos/salvos
+  [ ] saved_view.py: lista de artigos salvos
+  [ ] tags.py: CRUD de tags
+  [ ] Associar tags a artigos
+  [ ] archive_manager.py: exportar para Markdown
+  [ ] archive_view.py: browser do arquivo
+  [ ] html2text: conversão HTML → Markdown
+
+FASE 5 — REDDIT
+  [ ] reddit_fetcher.py: praw
+  [ ] add_reddit_dialog.py: input de credenciais e subreddit
+  [ ] Configurações → seção Reddit
+  [ ] Mapeamento de posts Reddit para o schema de articles
+
+FASE 6 — YOUTUBE E OUTRAS PLATAFORMAS RSS
+  [ ] Detecção automática do tipo de feed pela URL
+  [ ] Extração de channel_id do YouTube
+  [ ] Suporte a Tumblr e Substack (RSS puro — já funciona via feedparser)
+  [ ] Suporte a Mastodon (RSS puro)
+  [ ] Thumbnail de vídeos do YouTube nos cards
+
+FASE 7 — DASHBOARD PRINCIPAL
+  [ ] dashboard_view.py com todos os widgets
+  [ ] Estatísticas em tempo real: contadores, last updated
+  [ ] Artigos recentes e salvos no dashboard
+  [ ] Decoração cósmica completa (estrelas, amassados, cantos dobrados)
+
+FASE 8 — BUSCA E FILTROS
+  [ ] FTS5 virtual table + triggers de sincronização
+  [ ] search.py: busca por FTS5
+  [ ] Barra de busca global (Ctrl+K)
+  [ ] Filtros na feed_list_view (data, fonte, tag, status, integridade)
+
+FASE 9 — TRADUÇÃO
+  [ ] translator.py: wrapper do Argos Translate
+  [ ] translate_dialog.py
+  [ ] Configurações → seção Tradução (gerenciar modelos)
+  [ ] Integração no painel de leitura
+
+FASE 10 — EXPORTAÇÃO E ESTATÍSTICAS
+  [ ] export_pdf.py: WeasyPrint + template sépia
+  [ ] export_dialog.py
+  [ ] stats.py: agregação de métricas
+  [ ] stats_view.py: gráficos matplotlib
+  [ ] read_sessions: registro de tempo de leitura
+
+FASE 11 — POLIMENTO E MULTIPLATAFORMA
+  [ ] Animações (QPropertyAnimation)
+  [ ] Cursor piscante dourado nos inputs
+  [ ] Testes completos em CachyOS
+  [ ] Testes completos em Windows 10
+  [ ] Ícone do app (formato .ico para Windows, .png para Linux)
+  [ ] iniciar.sh e iniciar.bat
+  [ ] Revisão de todos os caminhos com pathlib.Path
+
+FASE 12 — (FUTURO)
+  [ ] IA: análise de artigos via Ollama (ai_bridge.py)
+  [ ] Twitter/X quando solução gratuita disponível
+  [ ] Playwright para scraping de sites com JS
+  [ ] Importar/exportar OPML
+  [ ] Notificações nativas (plyer)
+  [ ] Integração com OGMA
+
+
+================================================================================
+16. HISTÓRICO DE VERSÕES DESTE DOCUMENTO
+================================================================================
+
+v0.1 — 2026-03-20
+  Documento inicial criado com escopo completo aprovado.
+  Baseado nas decisões tomadas na sessão de planejamento:
+  - Stack: Python 3.11 + PyQt6 6.7 (mesma do OGMA)
+  - Fontes de conteúdo: RSS genérico, Reddit (API), YouTube (RSS),
+    Tumblr (RSS), Substack (RSS), Mastodon (RSS)
+  - Twitter/X adiado para versão futura
+  - Scraping: newspaper4k + BeautifulSoup (Playwright anotado para futuro)
+  - Tradução: Argos Translate (offline, local)
+  - Layout: dashboard como tela inicial + painel de leitura separado
+  - Arquivo em Markdown dentro de data/archive/
+  - IA adiada para versão futura (stub ai_bridge.py)
+  - Temas: diurno e noturno desde o v1
+  - Sistema de design: idêntico ao OGMA (papel envelhecido / máquina de
+    escrever / estrelas a lápis / sem border-radius expressivo)
+
+================================================================================
+  FIM DA BÍBLIA DO DESENVOLVEDOR — KOSMOS v0.1
+================================================================================

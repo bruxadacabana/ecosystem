@@ -5,12 +5,13 @@ Não se esqueça das regras para documentar no README e GUIDE. Não se esqueça 
 
 ---
 
-SearXNG tem suporte oficial apenas para Linux (incluindo Docker). No Windows, as opções são:
+#### Redesign — trazer o design antigo (pré-v3) sobre as features do v3 | 2026-06-17
 
-Docker Desktop — a forma mais simples: docker run -d -p 8888:8080 searxng/searxng
-WSL2 — instalar via pip dentro do WSL2 como se fosse Linux
-Não usar no Windows — a AKASHA pode usar o SearXNG do PC principal via IP local (se estiver na mesma rede)
+Seguindo a ordem — o próximo item de implementação é o R1 — Leitor (a peça central: portar o design do leitor antigo de 2082 linhas, mantendo análise/highlights/tradução do v3). Como é o maior e mais importante item, vou ler os dois leitores pra te propor o caminho com precisão antes de escrever — igual fiz na fundação. Lendo o reader do v3 (features que preciso manter) e mapeando o antigo.
 
+Escolha registrada: QWebEngine + highlights via JS (mais fiel) — o leitor bonito de volta, com todas as features do v3 e os highlights reimplementados via ponte JS no webview.
+
+---
 
 key = 11c345dcaebdada6070a5545e7245f5ac91fa265d24324b8b57a5d6ae11c8609
 

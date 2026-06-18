@@ -101,7 +101,7 @@ def test_shows_full_text_when_present(env):
         is_scraped=1,
     )
     assert reader.show_article(aid)
-    assert reader._body_lbl.text() == "Corpo completo do artigo, já scrapeado."
+    assert reader.current_body_html() == "Corpo completo do artigo, já scrapeado."
     assert reader._fulltext_btn.isHidden()
     assert reader._fulltext_status.isHidden()
 
@@ -112,7 +112,7 @@ def test_shows_excerpt_and_button_when_pending(env):
         conn, fid, content_excerpt="Apenas o resumo.", content_text=None, is_scraped=0,
     )
     assert reader.show_article(aid)
-    assert reader._body_lbl.text() == "Apenas o resumo."
+    assert reader.current_body_html() == "Apenas o resumo."
     assert not reader._fulltext_btn.isHidden()       # botão oferecido
     assert reader._fulltext_status.isHidden()
 
@@ -160,7 +160,7 @@ def test_on_scrape_done_success_reloads_body(env):
     reader, conn, fid = env
     aid = _insert_article(conn, fid, content_excerpt="Resumo.", content_text=None, is_scraped=0)
     reader.show_article(aid)
-    assert reader._body_lbl.text() == "Resumo."
+    assert reader.current_body_html() == "Resumo."
 
     # Simula o ScraperWorker tendo salvo o texto completo no banco
     conn.execute(
@@ -171,7 +171,7 @@ def test_on_scrape_done_success_reloads_body(env):
 
     reader.on_scrape_done(aid, True)
 
-    assert reader._body_lbl.text() == "Texto completo recém-extraído."
+    assert reader.current_body_html() == "Texto completo recém-extraído."
     assert reader._fulltext_btn.isHidden()
 
 
@@ -195,7 +195,7 @@ def test_on_scrape_done_ignores_other_article(env):
     # Evento de scraping de OUTRO artigo não deve afetar o atual
     reader.on_scrape_done(aid + 999, True)
 
-    assert reader._body_lbl.text() == "Resumo A."
+    assert reader.current_body_html() == "Resumo A."
     assert not reader._fulltext_btn.isHidden()
 
 
@@ -222,11 +222,11 @@ def test_on_article_translated_shows_translation(env):
     reader, conn, fid = env
     aid = _insert_article(conn, fid, content_text="English body text.")
     reader.show_article(aid)
-    assert reader._body_lbl.text() == "English body text."
+    assert reader.current_body_html() == "English body text."
 
     reader.on_article_translated(aid, "Texto do corpo em português.")
 
-    assert reader._body_lbl.text() == "Texto do corpo em português."
+    assert reader.current_body_html() == "Texto do corpo em português."
     assert reader._translate_btn.text() == "Ver original"
 
 
@@ -235,16 +235,16 @@ def test_translation_toggle(env):
     aid = _insert_article(conn, fid, content_text="Original EN.")
     reader.show_article(aid)
     reader.on_article_translated(aid, "Tradução PT.")
-    assert reader._body_lbl.text() == "Tradução PT."
+    assert reader.current_body_html() == "Tradução PT."
 
     # alterna para o original
     reader._on_translate_clicked()
-    assert reader._body_lbl.text() == "Original EN."
+    assert reader.current_body_html() == "Original EN."
     assert reader._translate_btn.text() == "Ver tradução"
 
     # alterna de volta para a tradução
     reader._on_translate_clicked()
-    assert reader._body_lbl.text() == "Tradução PT."
+    assert reader.current_body_html() == "Tradução PT."
     assert reader._translate_btn.text() == "Ver original"
 
 
@@ -254,7 +254,7 @@ def test_existing_translation_loaded_on_open(env):
     reader.show_article(aid)
     # tradução já existe → botão oferece alternância, original mostrado por padrão
     assert reader._translate_btn.text() == "Ver tradução"
-    assert reader._body_lbl.text() == "EN body"
+    assert reader.current_body_html() == "EN body"
 
 
 def test_on_article_translated_ignores_other(env):
@@ -262,4 +262,4 @@ def test_on_article_translated_ignores_other(env):
     aid = _insert_article(conn, fid, content_text="EN body")
     reader.show_article(aid)
     reader.on_article_translated(aid + 999, "não deve aparecer")
-    assert reader._body_lbl.text() == "EN body"
+    assert reader.current_body_html() == "EN body"

@@ -1,28 +1,32 @@
 """
 reader_pane.py — Painel direito: exibe o conteúdo do artigo selecionado.
 
-Exibe metadados do cabeçalho + corpo. Se o artigo já tem texto completo
-(`content_text`, scraping concluído), mostra-o; senão mostra o excerpt do feed
-e um botão "Carregar texto completo" que dispara o scraping P1 via ScraperWorker
-(sinal `scrape_requested`).
+Layout (design antigo, R1): chrome Qt em cima (título, meta, análise, toolbar de
+ações) + **corpo do artigo num QWebEngineView** (``ArticleWebView``) renderizado
+com o CSS sépia/serifado do leitor antigo + painel de destaques embaixo. A análise
+AI (Call A/B) atualiza no chrome Qt sem mexer no webview, então não atrapalha a
+posição de leitura; o webview só é re-renderizado em ações pontuais (texto completo,
+alternar tradução, criar/remover destaque).
 
-Tradução sob demanda (Fase 6): botão "Traduzir" dispara `translate_requested` (P2);
-quando a tradução chega (`on_article_translated`), o corpo passa a exibi-la, com o
-botão alternando entre "Ver original" e "Ver tradução" (o original fica sempre
-acessível). Resultados de análise AI chegam na Fase 4.
+Se o artigo já tem texto completo (`content_text`), mostra-o; senão mostra o excerpt
+e um botão "Carregar texto completo" que dispara o scraping P1 (sinal `scrape_requested`).
 
-Quando um artigo é aberto, marca-o como lido no banco (is_read=1, read_at=now).
-Isso permite que a sidebar atualize os contadores de não-lidos corretamente.
+Tradução sob demanda (P2): botão "Traduzir" dispara `translate_requested`; quando a
+tradução chega (`on_article_translated`), o corpo passa a exibi-la, com o botão
+alternando "Ver original"/"Ver tradução".
 
-O painel emite article_read(int) após marcar o artigo — a MainWindow usa esse
-sinal para recarregar a sidebar.
+Destaques (Fase 8): a seleção de texto no webview + menu de contexto criam um destaque
+(`ArticleWebView.highlight_requested` → `_create_highlight`); a coloração inline é HTML
+(`<mark class='hl-...'>`) montado em Python e re-renderizado no webview.
+
+Quando um artigo é aberto, marca-o como lido (is_read=1) e emite `article_read(int)`.
 """
 from __future__ import annotations
 
 import json
 import logging
 import sqlite3
-from datetime import datetime, timezone
+from datetime import datetime
 from html import escape
 
 from PySide6.QtCore import Qt, Signal
@@ -32,11 +36,8 @@ from PySide6.QtWidgets import (
     QLabel,
     QListWidget,
     QListWidgetItem,
-    QMenu,
     QPlainTextEdit,
     QPushButton,
-    QScrollArea,
-    QSizePolicy,
     QVBoxLayout,
     QWidget,
 )
@@ -44,35 +45,27 @@ from PySide6.QtWidgets import (
 from app.core.database import get_conn
 from app.core.highlights import (
     TYPE_LABELS,
-    VALID_TYPES,
     add_highlight,
     delete_highlight,
     list_highlights,
     update_highlight_note,
 )
+from app.ui.views.article_webview import ArticleWebView
 
 log = logging.getLogger("kosmos.reader_pane")
 
 _FIVE_WS_LABELS = (("quem", "Quem"), ("o_que", "O quê"), ("quando", "Quando"),
                    ("onde", "Onde"), ("por_que", "Por quê"))
 
-# Cor de fundo do trecho destacado no corpo, por tipo (coloração inline).
-_TYPE_BG = {
-    "citation": "#5C5020",       # âmbar
-    "question": "#2E3A4A",       # azul
-    "fact": "#2E4A35",           # verde
-    "contradiction": "#5A2E2E",  # vermelho
-    "generic": "#3D3226",        # neutro
-}
-# Ordem dos tipos no menu de contexto (exclui 'generic', que é só fallback).
-_MARK_TYPES = ("citation", "question", "fact", "contradiction")
+# Classes CSS de destaque válidas (correspondem a mark.hl-* no reader_*.css).
+_HL_CLASSES = frozenset({"citation", "question", "fact", "contradiction", "generic"})
 
 
 def _body_html(text: str, highlights: list[dict]) -> str:
-    """Escapa o corpo e envolve cada trecho destacado num span colorido por tipo.
+    """Escapa o corpo e envolve cada trecho destacado num <mark> colorido por tipo.
 
     Reserva faixas **não-sobrepostas** no texto original (mais longas primeiro) e
-    monta o HTML numa passada só — sem spans aninhados nem corrupção. Fragmento que
+    monta o HTML numa passada só — sem marcas aninhadas nem corrupção. Fragmento que
     não casar (formatação/duplicata/tradução) é ignorado na coloração; o destaque
     continua acessível na lista 'Meus destaques'.
     """
@@ -97,8 +90,8 @@ def _body_html(text: str, highlights: list[dict]) -> str:
     pos = 0
     for start, end, htype in claimed:
         out.append(escape(text[pos:start]))
-        color = _TYPE_BG.get(htype, _TYPE_BG["generic"])
-        out.append(f'<span style="background-color:{color}">{escape(text[start:end])}</span>')
+        cls = htype if htype in _HL_CLASSES else "generic"
+        out.append(f'<mark class="hl-{cls}">{escape(text[start:end])}</mark>')
         pos = end
     out.append(escape(text[pos:]))
     return "".join(out).replace("\n", "<br>")
@@ -210,130 +203,123 @@ class ReaderPane(QWidget):
     analysis_requested = Signal(int)     # article_id — pedido P1 de análise completa (Call B)
     add_to_investigation_requested = Signal(int)  # article_id — adicionar a uma pasta de investigação
 
-    def __init__(self, parent: QWidget | None = None) -> None:
+    def __init__(self, theme: str = "day", parent: QWidget | None = None) -> None:
         super().__init__(parent)
+        self._theme = theme
         self._current_article_id: int | None = None
         self._current_url: str = ""
         self._orig_body: str = ""              # corpo no idioma original (content_text/excerpt)
         self._translated_body: str = ""        # corpo traduzido (content_text_translated)
         self._showing_translation: bool = False
+        self._body_html_cache: str = ""        # último HTML do corpo renderizado no webview
         self._current_highlights: list[dict] = []  # destaques do artigo atual (Fase 8)
         self._current_highlight_id: int | None = None
         self._setup_ui()
-        log.debug("ReaderPane inicializada.")
+        log.debug("ReaderPane inicializada (tema=%s).", theme)
 
     def _setup_ui(self) -> None:
         outer = QVBoxLayout(self)
         outer.setContentsMargins(0, 0, 0, 0)
         outer.setSpacing(0)
 
-        # Scroll area que envolve todo o conteúdo
-        scroll = QScrollArea()
-        scroll.setWidgetResizable(True)
-        scroll.setFrameShape(QFrame.Shape.NoFrame)
-        outer.addWidget(scroll)
-
-        # Container interno
-        container = QWidget()
-        scroll.setWidget(container)
-        self._layout = QVBoxLayout(container)
-        self._layout.setContentsMargins(32, 24, 32, 32)
-        self._layout.setSpacing(0)
-        self._layout.setAlignment(Qt.AlignmentFlag.AlignTop)
-
-        # Estado inicial — placeholder
+        # Estado vazio — placeholder centralizado.
         self._placeholder = QLabel("← Selecione um artigo para ler.")
         self._placeholder.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._placeholder.setObjectName("placeholder")
-        self._layout.addWidget(self._placeholder)
+        outer.addWidget(self._placeholder, stretch=1)
 
-        # Widgets de conteúdo (ocultos no início)
+        # Conteúdo (quando há artigo): chrome de topo + corpo (webview) + destaques.
+        self._content = QWidget()
+        cv = QVBoxLayout(self._content)
+        cv.setContentsMargins(0, 0, 0, 0)
+        cv.setSpacing(0)
+
+        # --- Chrome de topo: título, meta, separador, análise, toolbar ---
+        top = QWidget()
+        tl = QVBoxLayout(top)
+        tl.setContentsMargins(32, 20, 32, 10)
+        tl.setSpacing(0)
+
         self._title_lbl = QLabel()
         self._title_lbl.setObjectName("reader_title")
         self._title_lbl.setProperty("class", "title")
         self._title_lbl.setWordWrap(True)
         self._title_lbl.setAlignment(Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignLeft)
-        self._layout.addWidget(self._title_lbl)
+        tl.addWidget(self._title_lbl)
 
         self._meta_lbl = QLabel()
         self._meta_lbl.setObjectName("reader_meta")
         self._meta_lbl.setProperty("class", "meta")
         self._meta_lbl.setWordWrap(True)
-        self._layout.addWidget(self._meta_lbl)
+        tl.addWidget(self._meta_lbl)
 
         sep = QFrame()
         sep.setFrameShape(QFrame.Shape.HLine)
         sep.setObjectName("reader_sep")
-        self._layout.addSpacing(12)
-        self._layout.addWidget(sep)
-        self._layout.addSpacing(16)
+        tl.addSpacing(10)
+        tl.addWidget(sep)
+        tl.addSpacing(12)
         self._sep = sep
 
         # Seção de análise AI (Fase 4) — preenchida progressivamente (Call A → Call B).
         self._analysis_header = QLabel("Análise")
         self._analysis_header.setObjectName("reader_analysis_header")
-        self._layout.addWidget(self._analysis_header)
+        tl.addWidget(self._analysis_header)
         self._analysis_lbl = QLabel()
         self._analysis_lbl.setObjectName("reader_analysis")
         self._analysis_lbl.setTextFormat(Qt.TextFormat.RichText)
         self._analysis_lbl.setWordWrap(True)
         self._analysis_lbl.setAlignment(Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignLeft)
-        self._layout.addWidget(self._analysis_lbl)
-        self._layout.addSpacing(16)
+        tl.addWidget(self._analysis_lbl)
+        tl.addSpacing(12)
 
-        self._body_lbl = QLabel()
-        self._body_lbl.setObjectName("reader_body")
-        self._body_lbl.setWordWrap(True)
-        self._body_lbl.setAlignment(Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignLeft)
-        self._body_lbl.setSizePolicy(
-            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding
-        )
-        # Seleção de trecho + menu de contexto para criar destaques (Fase 8).
-        self._body_lbl.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
-        self._body_lbl.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
-        self._body_lbl.customContextMenuRequested.connect(self._on_body_context_menu)
-        self._layout.addWidget(self._body_lbl)
-
-        # Botão para carregar o texto completo (scraping P1, sob demanda)
+        # Toolbar de ações (horizontal, acima do corpo) — texto completo, traduzir, investigação.
+        btn_row = QHBoxLayout()
+        btn_row.setContentsMargins(0, 0, 0, 0)
+        btn_row.setSpacing(8)
         self._fulltext_btn = QPushButton("Carregar texto completo")
         self._fulltext_btn.setObjectName("reader_fulltext_btn")
         self._fulltext_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self._fulltext_btn.clicked.connect(self._on_load_fulltext)
-        self._layout.addSpacing(16)
-        self._layout.addWidget(self._fulltext_btn, alignment=Qt.AlignmentFlag.AlignLeft)
-
-        # Status do scraping (carregando / falha)
-        self._fulltext_status = QLabel()
-        self._fulltext_status.setProperty("class", "meta")
-        self._fulltext_status.setWordWrap(True)
-        self._layout.addWidget(self._fulltext_status)
-
-        # Botão de tradução sob demanda (P2): "Traduzir" / "Ver tradução" / "Ver original"
+        btn_row.addWidget(self._fulltext_btn)
         self._translate_btn = QPushButton("Traduzir")
         self._translate_btn.setObjectName("reader_translate_btn")
         self._translate_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self._translate_btn.clicked.connect(self._on_translate_clicked)
-        self._layout.addSpacing(8)
-        self._layout.addWidget(self._translate_btn, alignment=Qt.AlignmentFlag.AlignLeft)
-
-        # Botão "Adicionar à investigação" (Fase 7) — entrega o artigo atual ao main_window.
+        btn_row.addWidget(self._translate_btn)
         self._investigation_btn = QPushButton("Adicionar à investigação")
         self._investigation_btn.setObjectName("reader_investigation_btn")
         self._investigation_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self._investigation_btn.clicked.connect(self._on_add_to_investigation)
-        self._layout.addSpacing(8)
-        self._layout.addWidget(self._investigation_btn, alignment=Qt.AlignmentFlag.AlignLeft)
+        btn_row.addWidget(self._investigation_btn)
+        btn_row.addStretch(1)
+        tl.addLayout(btn_row)
 
-        # Seção "Meus destaques" (Fase 8) — lista dos highlights do artigo + nota/remover.
-        self._layout.addSpacing(20)
+        self._fulltext_status = QLabel()
+        self._fulltext_status.setProperty("class", "meta")
+        self._fulltext_status.setWordWrap(True)
+        tl.addWidget(self._fulltext_status)
+
+        cv.addWidget(top)
+
+        # --- Corpo do artigo: QWebEngineView com o CSS do leitor antigo ---
+        self._body_view = ArticleWebView(theme=self._theme)
+        self._body_view.highlight_requested.connect(self._on_webview_highlight)
+        cv.addWidget(self._body_view, stretch=1)
+
+        # --- Rodapé: "Meus destaques" (lista + nota/remover) ---
+        bottom = QWidget()
+        bl = QVBoxLayout(bottom)
+        bl.setContentsMargins(32, 8, 32, 16)
+        bl.setSpacing(4)
         self._highlights_header = QLabel("Meus destaques")
         self._highlights_header.setObjectName("reader_highlights_header")
-        self._layout.addWidget(self._highlights_header)
+        bl.addWidget(self._highlights_header)
         self._highlights_list = QListWidget()
         self._highlights_list.setObjectName("reader_highlights_list")
-        self._highlights_list.setMaximumHeight(140)
+        self._highlights_list.setMaximumHeight(120)
         self._highlights_list.currentRowChanged.connect(self._on_highlight_selected)
-        self._layout.addWidget(self._highlights_list)
+        bl.addWidget(self._highlights_list)
 
         self._highlight_detail = QWidget()
         hd = QVBoxLayout(self._highlight_detail)
@@ -352,9 +338,11 @@ class ReaderPane(QWidget):
         hrow.addWidget(self._highlight_remove_btn)
         hrow.addStretch(1)
         hd.addLayout(hrow)
-        self._layout.addWidget(self._highlight_detail)
+        bl.addWidget(self._highlight_detail)
 
-        self._layout.addStretch()
+        cv.addWidget(bottom)
+
+        outer.addWidget(self._content, stretch=1)
         self._set_content_visible(False)
 
     # ------------------------------------------------------------------
@@ -434,10 +422,16 @@ class ReaderPane(QWidget):
         self._orig_body = ""
         self._translated_body = ""
         self._showing_translation = False
+        self._body_html_cache = ""
         self._current_highlights = []
         self._current_highlight_id = None
+        self._body_view.show_empty()
         self._set_content_visible(False)
         self._placeholder.show()
+
+    def current_body_html(self) -> str:
+        """HTML do corpo atualmente renderizado no webview (inspeção/testes)."""
+        return self._body_html_cache
 
     # ------------------------------------------------------------------
     # Internos
@@ -491,14 +485,12 @@ class ReaderPane(QWidget):
         if content_text:
             # Texto completo já disponível — exibe e oculta o botão.
             self._apply_body(content_text, is_original=True)
-            self._body_lbl.show()
             self._fulltext_btn.hide()
             self._fulltext_status.hide()
             return
 
         # Sem texto completo — mostra o excerpt do feed (se houver)
         self._apply_body(excerpt, is_original=True)
-        self._body_lbl.setVisible(bool(excerpt))
 
         if is_scraped == -1:
             # Falha definitiva — não oferece botão
@@ -580,7 +572,6 @@ class ReaderPane(QWidget):
             else:
                 self._apply_body(self._orig_body, is_original=True)
                 self._translate_btn.setText("Ver tradução")
-            self._body_lbl.setVisible(bool(self._body_lbl.text()))
             self._translate_btn.setEnabled(True)
             self._translate_btn.show()
         elif self._orig_body:
@@ -700,13 +691,13 @@ class ReaderPane(QWidget):
     # ------------------------------------------------------------------
 
     def _apply_body(self, text: str, is_original: bool) -> None:
-        """Define o corpo; aplica a coloração inline dos destaques só no texto original."""
+        """Monta o HTML do corpo (com marcas só no original) e o renderiza no webview."""
         if is_original and self._current_highlights:
-            self._body_lbl.setTextFormat(Qt.TextFormat.RichText)
-            self._body_lbl.setText(_body_html(text, self._current_highlights))
+            html = _body_html(text, self._current_highlights)
         else:
-            self._body_lbl.setTextFormat(Qt.TextFormat.PlainText)
-            self._body_lbl.setText(text or "")
+            html = escape(text or "").replace("\n", "<br>")
+        self._body_html_cache = html
+        self._body_view.set_body(html)
 
     def _repaint_body(self) -> None:
         """Re-renderiza o corpo atual (após criar/remover destaque)."""
@@ -715,26 +706,17 @@ class ReaderPane(QWidget):
         else:
             self._apply_body(self._orig_body, is_original=True)
 
-    def _on_body_context_menu(self, pos) -> None:
-        """Menu de contexto no corpo: marca o trecho selecionado como um tipo de destaque."""
+    def _on_webview_highlight(self, text: str, htype: str) -> None:
+        """Sinal do webview: cria um destaque do trecho selecionado no artigo atual."""
         if self._current_article_id is None:
             return
-        sel = self._body_lbl.selectedText().strip()
-        if not sel:
+        frag = (text or "").strip()
+        if not frag:
             return
-        sel = sel.replace(" ", "\n").replace(" ", "\n")
-        start = self._body_lbl.selectionStart()
-        menu = QMenu(self)
-        sub = menu.addMenu("Marcar como")
-        for t in _MARK_TYPES:
-            act = sub.addAction(TYPE_LABELS[t])
-            act.setData(t)
-        chosen = menu.exec(self._body_lbl.mapToGlobal(pos))
-        if chosen is not None and chosen.data() in VALID_TYPES:
-            self._create_highlight(sel, chosen.data(), position_hint=start)
+        self._create_highlight(frag, htype)
 
     def _create_highlight(self, text: str, htype: str, position_hint=None) -> None:
-        """Cria um destaque do artigo atual e atualiza corpo + painel (separado do menu, testável)."""
+        """Cria um destaque do artigo atual e atualiza corpo + painel (testável)."""
         if self._current_article_id is None:
             return
         add_highlight(self._current_article_id, text, htype, position_hint=position_hint)
@@ -793,20 +775,7 @@ class ReaderPane(QWidget):
         self._reload_highlights()
 
     def _set_content_visible(self, visible: bool) -> None:
-        for widget in (
-            self._title_lbl,
-            self._meta_lbl,
-            self._sep,
-            self._analysis_header,
-            self._analysis_lbl,
-            self._body_lbl,
-            self._fulltext_btn,
-            self._fulltext_status,
-            self._translate_btn,
-            self._investigation_btn,
-            self._highlights_header,
-            self._highlights_list,
-        ):
-            widget.setVisible(visible)
+        self._content.setVisible(visible)
+        self._placeholder.setVisible(not visible)
         if not visible:
             self._highlight_detail.setVisible(False)
