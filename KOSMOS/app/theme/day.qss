@@ -379,3 +379,44 @@ QPushButton#navItem:checked {
     border-left: 3px solid #8B7355;
 }
 QStackedWidget#centralStack { background-color: #f0e8d5; }
+
+/* ── Cards de artigo (lista) — design antigo, modo dia ─────────────────────── */
+QFrame#article_card {
+    background-color: transparent;
+    border: none;
+    border-bottom: 1px solid #d8cbb0;
+}
+QFrame#article_card[alerted="true"] {
+    background-color: #ece0c8;
+}
+QLabel#card_title { color: #2c2416; font-size: 13px; }
+QLabel#card_meta { color: #8b7355; font-size: 11px; }
+/* Borda esquerda por sentimento */
+QFrame#article_card[sentiment="positivo"] { border-left: 3px solid #5a7a45; }
+QFrame#article_card[sentiment="neutro"]   { border-left: 3px solid #a89878; }
+QFrame#article_card[sentiment="negativo"] { border-left: 3px solid #a85a2a; }
+/* Chips de tags + ícone de clickbait */
+QLabel#tag_chip {
+    background-color: #e8ddc8;
+    color: #6b5d45;
+    border: 1px solid #c4b49a;
+    border-radius: 7px;
+    padding: 1px 6px;
+    font-size: 10px;
+}
+QLabel#clickbait_icon { color: #a85a2a; font-size: 12px; }
+/* Bolinha de lido/não-lido: não-lido = marrom, lido = apagado */
+QLabel#read_dot { border-radius: 4px; background-color: #8b7355; }
+QLabel#read_dot[read="true"] { background-color: #c4b49a; }
+/* Badge de idioma */
+QLabel#lang_badge {
+    color: #6b5d45;
+    background-color: #e8ddc8;
+    border: 1px solid #c4b49a;
+    border-radius: 6px;
+    padding: 0 5px;
+    font-size: 9px;
+}
+/* Snippet de resumo (serifado) */
+QLabel#card_summary { color: #5a4e38; font-size: 12px; }
+QLabel#placeholder { color: #a89878; font-size: 13px; }

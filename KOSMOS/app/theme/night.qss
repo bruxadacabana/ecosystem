@@ -380,6 +380,33 @@ QLabel#clickbait_icon {
     font-size: 12px;
 }
 
+/* Bolinha de lido/não-lido (design antigo): não-lido = dourado, lido = apagado */
+QLabel#read_dot {
+    border-radius: 4px;
+    background-color: #D4A820;
+}
+QLabel#read_dot[read="true"] {
+    background-color: #2E3445;
+}
+/* Badge de idioma do artigo */
+QLabel#lang_badge {
+    color: #9A9080;
+    background-color: #181D28;
+    border: 1px solid #2E3445;
+    border-radius: 6px;
+    padding: 0 5px;
+    font-size: 9px;
+}
+/* Snippet de resumo (serifado) */
+QLabel#card_summary {
+    color: #B8A882;
+    font-size: 12px;
+}
+/* Card de artigo em alerta (keyword/entidade vigiada) */
+QFrame#article_card[alerted="true"] {
+    background-color: #1A2030;
+}
+
 QLabel#placeholder {
     color: #4A5266;
     font-size: 13px;

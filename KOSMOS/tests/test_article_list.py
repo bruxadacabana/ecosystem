@@ -69,6 +69,13 @@ def _clickbait_icon(card):
     return card.findChild(QLabel, "clickbait_icon")
 
 
+def _clickbait_shown(card) -> bool:
+    """No design novo o badge de clickbait sempre existe, mas fica oculto até a Call A
+    indicar valor alto — então testamos visibilidade, não presença."""
+    w = _clickbait_icon(card)
+    return w is not None and not w.isHidden()
+
+
 # ---------------------------------------------------------------------------
 # _analysis_from_data
 # ---------------------------------------------------------------------------
@@ -94,19 +101,20 @@ class TestArticleCard:
     def test_neutral_without_analysis(self, qapp):
         card = ArticleCard({"id": 1, "title": "X"})
         assert card.property("sentiment") in (None, "")
-        assert card._analysis_widget.isHidden() is True
+        assert card._tags_container.isHidden() is True
+        assert card._clickbait_badge.isHidden() is True
 
     def test_renders_sentiment_border_and_chips(self, qapp):
         card = ArticleCard({"id": 1, "title": "X", "ai_sentiment": "negativo",
                             "ai_clickbait_score": 0.1, "ai_tags": '["ia", "python"]'})
         assert card.property("sentiment") == "negativo"
         assert _chips(card) == ["ia", "python"]
-        assert _clickbait_icon(card) is None   # clickbait baixo → sem ícone
+        assert not _clickbait_shown(card)   # clickbait baixo → badge oculto
 
     def test_clickbait_icon_above_threshold(self, qapp):
         card = ArticleCard({"id": 1, "title": "X", "ai_sentiment": "neutro",
                             "ai_clickbait_score": 0.9, "ai_tags": None})
-        assert _clickbait_icon(card) is not None
+        assert _clickbait_shown(card)
 
     def test_chips_capped(self, qapp):
         card = ArticleCard({"id": 1, "title": "X",
@@ -118,13 +126,43 @@ class TestArticleCard:
         card.apply_quick_analysis("positivo", 0.8, ["tag"])
         assert card.property("sentiment") == "positivo"
         assert _chips(card) == ["tag"]
-        assert _clickbait_icon(card) is not None
-        assert card._analysis_widget.isHidden() is False
+        assert _clickbait_shown(card)
+        assert card._tags_container.isHidden() is False
 
     def test_invalid_sentiment_clears_property(self, qapp):
         card = ArticleCard({"id": 1, "title": "X"})
         card.apply_quick_analysis("raivoso", None, [])
         assert card.property("sentiment") == ""
+
+    def test_read_dot_reflects_is_read(self, qapp):
+        unread = ArticleCard({"id": 1, "title": "X", "is_read": 0})
+        read = ArticleCard({"id": 2, "title": "Y", "is_read": 1})
+        assert unread._dot.property("read") is False
+        assert read._dot.property("read") is True
+
+    def test_lang_badge_when_language(self, qapp):
+        card = ArticleCard({"id": 1, "title": "X", "language_detected": "en"})
+        badge = card.findChild(QLabel, "lang_badge")
+        assert badge is not None and badge.text() == "EN"
+
+    def test_no_lang_badge_without_language(self, qapp):
+        card = ArticleCard({"id": 1, "title": "X"})
+        assert card.findChild(QLabel, "lang_badge") is None
+
+    def test_summary_strips_html(self, qapp):
+        card = ArticleCard({"id": 1, "title": "X", "content_excerpt": "<p>Resumo do <b>feed</b></p>"})
+        assert "<" not in card._summary_lbl.text()
+        assert "Resumo do feed" in card._summary_lbl.text()
+        assert not card._summary_lbl.isHidden()
+
+    def test_author_in_meta(self, qapp):
+        card = ArticleCard({"id": 1, "title": "X", "feed_title": "Feed", "author": "Maria"})
+        assert "Maria" in card._meta_lbl.text()
+
+    def test_alert_prefix_preserved_on_title_update(self, qapp):
+        card = ArticleCard({"id": 1, "title": "Orig", "alerted": True})
+        card.set_title("Traduzido")
+        assert card._title_lbl.text() == "🔔 Traduzido"
 
 
 # ---------------------------------------------------------------------------
@@ -157,7 +195,7 @@ class TestArticleList:
         card = lst._card_for(aid)
         assert card.property("sentiment") == "negativo"
         assert _chips(card) == ["alerta"]
-        assert _clickbait_icon(card) is not None
+        assert _clickbait_shown(card)
 
     def test_on_quick_analysis_done_unknown_id_no_crash(self, qapp, db):
         conn, _, _ = db

@@ -15,12 +15,15 @@ FetchWorker emite feed_done, on_feed_updated decide se recarga ou não.
 """
 from __future__ import annotations
 
+import html
 import json
 import logging
+import re
 import sqlite3
 from datetime import datetime, timezone
 
 from PySide6.QtCore import Qt, Signal
+from PySide6.QtGui import QFont, QFontMetrics
 from PySide6.QtWidgets import (
     QFrame,
     QHBoxLayout,
@@ -28,6 +31,7 @@ from PySide6.QtWidgets import (
     QListWidget,
     QListWidgetItem,
     QMenu,
+    QSizePolicy,
     QVBoxLayout,
     QWidget,
 )
@@ -94,116 +98,193 @@ def _fmt_date(iso: str | None) -> str:
         return ""
 
 
+def _strip_html(text: str) -> str:
+    """Remove tags HTML e normaliza espaços (para o snippet de resumo do card)."""
+    text = re.sub(r"<[^>]+>", " ", text or "")
+    text = html.unescape(text)
+    return re.sub(r"\s+", " ", text).strip()
+
+
+def _truncate(text: str, max_chars: int) -> str:
+    if len(text) <= max_chars:
+        return text
+    return text[:max_chars].rsplit(" ", 1)[0] + "…"
+
+
+def _font(family: str, fallback: str, size: int) -> QFont:
+    """Fonte do design antigo com fallback (Special Elite / Courier Prime / IM Fell English)."""
+    f = QFont(family)
+    if not f.exactMatch():
+        f = QFont(fallback)
+    f.setPointSize(size)
+    return f
+
+
 class ArticleCard(QFrame):
-    """Widget de card para um artigo. Exibido dentro de ArticleList."""
+    """Card de artigo com o design do KOSMOS antigo.
+
+    Bolinha de lido/não-lido à esquerda, borda esquerda colorida por sentimento,
+    título serifado (máquina de escrever), meta + badge de idioma, chips de tags
+    ao vivo, snippet de resumo e badge de clickbait à direita.
+
+    Mantém a API que a ArticleList consome: `article_id`, `set_title`,
+    `apply_quick_analysis` (Call A ao vivo).
+    """
 
     def __init__(self, data: dict, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self.setObjectName("article_card")
+        self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
         self._article_id: int = data["id"]
         self._setup_ui(data)
 
     def _setup_ui(self, data: dict) -> None:
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(12, 8, 12, 8)
-        layout.setSpacing(3)
-
-        # Alerta: card destacado quando o artigo casa com keyword/entidade vigiada.
-        # Property "alerted" → estilo no QSS; sino 🔔 prefixado ao título como sinal claro.
+        # Alerta: card destacado quando casa com keyword/entidade vigiada (🔔 + property).
         self._alerted: bool = bool(data.get("alerted"))
         self.setProperty("alerted", self._alerted)
 
-        # Título — prefere a tradução (no idioma da usuária) quando disponível;
-        # negrito se não-lido.
-        base_title = data.get("title_translated") or data.get("title") or "(sem título)"
-        title_lbl = QLabel(("🔔 " + base_title) if self._alerted else base_title)
-        title_lbl.setWordWrap(True)
-        title_lbl.setObjectName("card_title")
-        if not data.get("is_read"):
-            font = title_lbl.font()
-            font.setBold(True)
-            title_lbl.setFont(font)
-        layout.addWidget(title_lbl)
-        self._title_lbl = title_lbl
+        outer = QHBoxLayout(self)
+        outer.setContentsMargins(14, 12, 14, 12)
+        outer.setSpacing(12)
 
-        # Linha de metadados: feed · data · tipo · tempo leitura
+        # Bolinha de lido/não-lido (property "read" → estilo no QSS).
+        self._dot = QLabel()
+        self._dot.setObjectName("read_dot")
+        self._dot.setFixedSize(8, 8)
+        self._dot.setProperty("read", bool(data.get("is_read")))
+        outer.addWidget(self._dot, 0, Qt.AlignmentFlag.AlignTop)
+
+        content = QVBoxLayout()
+        content.setSpacing(3)
+        content.setContentsMargins(0, 0, 0, 0)
+
+        # Título — prefere a tradução; serifado; negrito se não-lido. Altura fixa a 2
+        # linhas para não causar reflow quando a tradução chega ao vivo.
+        base_title = data.get("title_translated") or data.get("title") or "(sem título)"
+        title_font = _font("Special Elite", "Courier New", 13)
+        self._title_lbl = QLabel(("🔔 " + base_title) if self._alerted else base_title)
+        self._title_lbl.setObjectName("card_title")
+        self._title_lbl.setWordWrap(True)
+        if data.get("is_read"):
+            self._title_lbl.setFont(title_font)
+        else:
+            bold = QFont(title_font)
+            bold.setBold(True)
+            self._title_lbl.setFont(bold)
+        fm = QFontMetrics(title_font)
+        self._title_lbl.setMaximumHeight(fm.lineSpacing() * 2 + 6)
+        content.addWidget(self._title_lbl)
+
+        # Meta: feed · autor · data · tipo · min + badge de idioma.
         meta_parts: list[str] = []
         if data.get("feed_title"):
-            meta_parts.append(data["feed_title"])
+            meta_parts.append(str(data["feed_title"]))
+        if data.get("author"):
+            meta_parts.append(str(data["author"]))
         date_str = _fmt_date(data.get("published_at"))
         if date_str:
             meta_parts.append(date_str)
         art_type = data.get("article_type") or "news"
         if art_type != "news":
-            meta_parts.append(art_type.upper())
+            meta_parts.append(str(art_type).upper())
         reading = data.get("estimated_reading_min")
         if reading:
             meta_parts.append(f"{reading} min")
 
-        meta_lbl = QLabel(" · ".join(meta_parts))
-        meta_lbl.setProperty("class", "meta")
-        meta_lbl.setObjectName("card_meta")
-        layout.addWidget(meta_lbl)
+        meta_font = _font("Courier Prime", "Courier New", 10)
+        meta_row = QHBoxLayout()
+        meta_row.setSpacing(6)
+        meta_row.setContentsMargins(0, 0, 0, 0)
+        self._meta_lbl = QLabel("  ·  ".join(meta_parts))
+        self._meta_lbl.setObjectName("card_meta")
+        self._meta_lbl.setProperty("class", "meta")
+        self._meta_lbl.setFont(meta_font)
+        meta_row.addWidget(self._meta_lbl)
+        lang = (data.get("language_detected") or "").strip()
+        if lang:
+            lang_lbl = QLabel(lang.upper()[:5])
+            lang_lbl.setObjectName("lang_badge")
+            lang_lbl.setFont(meta_font)
+            meta_row.addWidget(lang_lbl)
+        meta_row.addStretch(1)
+        content.addLayout(meta_row)
 
-        # Linha de análise (Fase 4): ícone de clickbait + chips de tags. Vazia até a
-        # Call A chegar — artigos na fila ficam com visual neutro.
-        self._analysis_widget = QWidget()
-        self._analysis_layout = QHBoxLayout(self._analysis_widget)
-        self._analysis_layout.setContentsMargins(0, 2, 0, 0)
-        self._analysis_layout.setSpacing(4)
-        layout.addWidget(self._analysis_widget)
-        self._analysis_widget.hide()
+        # Linha de tags (chips) — preenchida pela Call A.
+        self._tags_row = QHBoxLayout()
+        self._tags_row.setSpacing(4)
+        self._tags_row.setContentsMargins(0, 2, 0, 0)
+        self._tags_container = QWidget()
+        self._tags_container.setLayout(self._tags_row)
+        content.addWidget(self._tags_container)
+        self._tags_container.hide()
 
-        # Se o artigo já foi pré-analisado (carregado do banco), renderiza de imediato.
+        # Snippet de resumo (excerpt do feed), serifado.
+        snippet = _truncate(_strip_html(data.get("content_excerpt") or ""), 180)
+        self._summary_lbl = QLabel(snippet)
+        self._summary_lbl.setObjectName("card_summary")
+        self._summary_lbl.setWordWrap(True)
+        self._summary_lbl.setFont(_font("IM Fell English", "Georgia", 12))
+        self._summary_lbl.setVisible(bool(snippet))
+        content.addWidget(self._summary_lbl)
+
+        outer.addLayout(content, 1)
+
+        # Coluna direita: badge de clickbait (⚠), oculto até a Call A indicar alto.
+        self._clickbait_badge = QLabel("⚠")
+        self._clickbait_badge.setObjectName("clickbait_icon")
+        self._clickbait_badge.setFixedWidth(16)
+        self._clickbait_badge.setAlignment(Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignTop)
+        self._clickbait_badge.hide()
+        outer.addWidget(self._clickbait_badge, 0, Qt.AlignmentFlag.AlignTop)
+
+        # Pré-análise já no banco → renderiza de imediato.
         sentiment, clickbait, tags = _analysis_from_data(data)
         if sentiment or clickbait is not None or tags:
-            self._render_analysis(sentiment, clickbait, tags)
+            self.apply_quick_analysis(sentiment, clickbait, tags)
 
     @property
     def article_id(self) -> int:
         return self._article_id
 
     def set_title(self, text: str) -> None:
-        """Atualiza o texto do título (usado ao receber a tradução ao vivo)."""
+        """Atualiza o título exibido (tradução ao vivo); preserva o prefixo de alerta."""
         if text:
-            self._title_lbl.setText(text)
+            self._title_lbl.setText(("🔔 " + text) if self._alerted else text)
 
     def apply_quick_analysis(self, sentiment: str | None, clickbait: float | None, tags: list) -> None:
-        """Atualiza o card com o resultado da Call A (sinal quick_analysis_done)."""
-        self._render_analysis(sentiment, clickbait, tags)
-
-    def _clear_analysis_row(self) -> None:
-        while self._analysis_layout.count():
-            item = self._analysis_layout.takeAt(0)
-            w = item.widget()
-            if w is not None:
-                w.deleteLater()
-
-    def _render_analysis(self, sentiment: str | None, clickbait: float | None, tags: list) -> None:
+        """Call A ao vivo: borda por sentimento + chips de tags + badge de clickbait."""
         # Borda esquerda por sentimento (verde/cinza/laranja via property no QSS).
         self.setProperty("sentiment", sentiment if sentiment in _SENTIMENTS else "")
         self.style().unpolish(self)
         self.style().polish(self)
 
-        # Reconstrói a linha: ícone de clickbait (se alto) + chips de tags.
-        self._clear_analysis_row()
-        has_content = False
-        if clickbait is not None and clickbait >= _CLICKBAIT_ALERT:
-            icon = QLabel("⚠")  # ⚠
-            icon.setObjectName("clickbait_icon")
-            icon.setToolTip(f"Clickbait alto ({clickbait:.0%})")
-            self._analysis_layout.addWidget(icon)
-            has_content = True
+        # Chips de tags (reconstrói).
+        while self._tags_row.count():
+            it = self._tags_row.takeAt(0)
+            w = it.widget()
+            if w is not None:
+                w.deleteLater()
+        chip_font = _font("Courier Prime", "Courier New", 9)
+        shown = 0
         for tag in (tags or [])[:_MAX_CHIPS]:
-            text = str(tag).strip()
-            if not text:
+            t = str(tag).strip()
+            if not t:
                 continue
-            chip = QLabel(text)
+            chip = QLabel(t)
             chip.setObjectName("tag_chip")
-            self._analysis_layout.addWidget(chip)
-            has_content = True
-        self._analysis_layout.addStretch(1)
-        self._analysis_widget.setVisible(has_content)
+            chip.setFont(chip_font)
+            self._tags_row.addWidget(chip)
+            shown += 1
+        if shown:
+            self._tags_row.addStretch(1)
+        self._tags_container.setVisible(shown > 0)
+
+        # Badge de clickbait.
+        high = clickbait is not None and clickbait >= _CLICKBAIT_ALERT
+        if high:
+            self._clickbait_badge.setToolTip(f"Clickbait alto ({clickbait:.0%})")
+        self._clickbait_badge.setVisible(high)
 
 
 class ArticleList(QWidget):
@@ -264,8 +345,9 @@ class ArticleList(QWidget):
             if feed_id == ALL_FEEDS_ID:
                 rows = _conn.execute(
                     """
-                    SELECT a.id, a.title, a.title_translated, a.published_at, a.article_type,
-                           a.estimated_reading_min, a.is_read,
+                    SELECT a.id, a.title, a.title_translated, a.author, a.published_at,
+                           a.article_type, a.estimated_reading_min, a.is_read,
+                           a.language_detected, a.content_excerpt,
                            a.ai_sentiment, a.ai_clickbait_score, a.ai_tags,
                            COALESCE(f.title, f.url) AS feed_title
                       FROM articles a
@@ -278,8 +360,9 @@ class ArticleList(QWidget):
             else:
                 rows = _conn.execute(
                     """
-                    SELECT a.id, a.title, a.title_translated, a.published_at, a.article_type,
-                           a.estimated_reading_min, a.is_read,
+                    SELECT a.id, a.title, a.title_translated, a.author, a.published_at,
+                           a.article_type, a.estimated_reading_min, a.is_read,
+                           a.language_detected, a.content_excerpt,
                            a.ai_sentiment, a.ai_clickbait_score, a.ai_tags,
                            COALESCE(f.title, f.url) AS feed_title
                       FROM articles a
