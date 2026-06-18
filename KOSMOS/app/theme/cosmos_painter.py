@@ -29,7 +29,7 @@ def paint_cosmos(width: int, height: int, theme: str = "day", seed: int = 42) ->
     """
     rng = random.Random(seed)
 
-    bg_color   = QColor("#f0e8d5") if theme == "day" else QColor("#1C1610")
+    bg_color   = QColor("#f0e8d5") if theme == "day" else QColor("#12161E")
     star_color = QColor("#5C4E3A") if theme == "day" else QColor("#C4B49A")
 
     pixmap = QPixmap(width, height)
