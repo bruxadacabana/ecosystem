@@ -343,9 +343,11 @@ class TestReaderPane:
         assert reader is not None
 
     def test_placeholder_shown_initially(self, reader):
-        # isVisible() depende da janela estar exibida; usar isHidden() para testes headless
+        # isVisible() depende da janela estar exibida; usar isHidden() para testes headless.
+        # No design R1 a visibilidade do conteúdo é controlada no container _content
+        # (que envolve título, corpo no webview e destaques), não widget a widget.
         assert not reader._placeholder.isHidden()
-        assert reader._title_lbl.isHidden()
+        assert reader._content.isHidden()
 
     def test_show_article_displays_title(self, reader, db):
         _, conn = db
@@ -407,7 +409,7 @@ class TestReaderPane:
         reader.show_article(aid, conn)
         reader.clear()
         assert not reader._placeholder.isHidden()
-        assert reader._title_lbl.isHidden()
+        assert reader._content.isHidden()
 
     def test_mark_as_read_updates_read_at(self, reader, db):
         _, conn = db

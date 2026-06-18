@@ -1632,6 +1632,7 @@ Arquivo: `KOSMOS/pyproject.toml`
 | `requests` | HTTP síncrono para fetch de feeds e scraping de artigos |
 | `argostranslate` | Tradução offline de títulos e artigos (`translator.py`); par de idiomas instalado sob demanda na 1ª tradução |
 | `PySide6.QtCharts` | Gráficos do dashboard de estatísticas (Fase 8) — parte do PySide6, sem dependência pip adicional |
+| `PySide6.QtWebEngine` | Corpo do artigo no leitor renderizado como HTML com o CSS sépia do leitor antigo (`ArticleWebView` / `QWebEngineView`, redesign R1) — parte do PySide6 (Addons), sem dependência pip adicional |
 | `filelock` | Mutex para `ecosystem.json` |
 | `Pillow` | Processamento de imagens |
 | `html2text` | Conversão HTML → Markdown para arquivamento de artigos (Fase 5) |
