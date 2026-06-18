@@ -36,13 +36,13 @@ from PySide6.QtCore import Qt, QTimer
 from PySide6.QtGui import QCloseEvent, QCursor
 from PySide6.QtWidgets import (
     QFileDialog,
+    QHBoxLayout,
     QInputDialog,
     QMainWindow,
     QMenu,
-    QPushButton,
     QSplitter,
+    QStackedWidget,
     QStatusBar,
-    QTabWidget,
     QWidget,
 )
 
@@ -63,6 +63,7 @@ from app.ui.views.alerts_view import AlertsView
 from app.ui.views.feed_sidebar import ALL_FEEDS_ID, FeedSidebar
 from app.ui.views.reader_pane import ReaderPane
 from app.ui.views.settings_window import SettingsDialog
+from app.ui.nav_rail import NavRail
 from app.utils.config import KosmosConfig, save_config
 
 log = logging.getLogger("kosmos.main_window")
@@ -129,17 +130,28 @@ class MainWindow(QMainWindow):
         self._stats_view = StatsView()
         self._analysis_tab.set_pane("stats", self._stats_view)
 
-        tabs = QTabWidget()
-        self._reading_tab_index = tabs.addTab(splitter, "Leitura")
-        self._analysis_tab_index = tabs.addTab(self._analysis_tab, "Análise")
-        tabs.currentChanged.connect(self._on_tab_changed)
-        # Botão de Configurações no canto da barra de abas (feeds, tema, tradução, tópicos).
-        self._settings_btn = QPushButton("⚙ Configurações")
-        self._settings_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        self._settings_btn.clicked.connect(self._open_settings)
-        tabs.setCornerWidget(self._settings_btn, Qt.Corner.TopRightCorner)
-        self.setCentralWidget(tabs)
-        self._tabs = tabs
+        # Shell (design antigo): nav rail à esquerda + pilha de páginas.
+        # Páginas: Leitura (splitter 3-painéis) e Análise (ferramentas de investigação).
+        self._stack = QStackedWidget()
+        self._stack.setObjectName("centralStack")
+        self._stack.addWidget(splitter)            # página "leitura"
+        self._stack.addWidget(self._analysis_tab)  # página "analise"
+
+        self._nav = NavRail(theme=self.config.theme)
+        self._nav.nav_requested.connect(self._on_nav)
+        self._nav.settings_requested.connect(self._open_settings)
+        self._nav.refresh_requested.connect(self._on_refresh)
+        self._nav.add_feed_requested.connect(self._open_settings)
+
+        central = QWidget()
+        row = QHBoxLayout(central)
+        row.setContentsMargins(0, 0, 0, 0)
+        row.setSpacing(0)
+        row.addWidget(self._nav)
+        row.addWidget(self._stack, 1)
+        self.setCentralWidget(central)
+
+        self._nav.set_active("leitura")
 
         bar = QStatusBar()
         self.setStatusBar(bar)
@@ -209,19 +221,34 @@ class MainWindow(QMainWindow):
         self._article_list.load_articles(ALL_FEEDS_ID)
         log.info("Carga inicial concluída.")
 
-    def _on_tab_changed(self, index: int) -> None:
-        """Ao abrir a aba Análise, recarrega entidades e investigações (cobre o que mudou)."""
-        if index == self._analysis_tab_index:
-            self._entity_view.load_entities()
-            self._investigation_view.load_investigations()
-            self._coverage_map.reload()
-            self._framing_view.reload()
-            self._alerts_view.reload()
-            self._stats_view.load()
+    def _on_nav(self, view: str) -> None:
+        """Troca a página ativa no stack (nav rail do design antigo)."""
+        if view == "leitura":
+            self._stack.setCurrentWidget(self._splitter)
+        elif view == "analise":
+            self._stack.setCurrentWidget(self._analysis_tab)
+            self._reload_analysis_views()
+
+    def _reload_analysis_views(self) -> None:
+        """Recarrega as ferramentas de análise (cobre o que mudou desde a última visita)."""
+        self._entity_view.load_entities()
+        self._investigation_view.load_investigations()
+        self._coverage_map.reload()
+        self._framing_view.reload()
+        self._alerts_view.reload()
+        self._stats_view.load()
+
+    def _on_refresh(self) -> None:
+        """↻ — recarrega feeds e lista de artigos exibidos."""
+        self._sidebar.load_feeds()
+        self._article_list.load_articles(ALL_FEEDS_ID)
+        self.statusBar().showMessage("Feeds e artigos recarregados.", 3000)
+        log.info("Recarga manual (↻) solicitada.")
 
     def _open_article_from_analysis(self, article_id: int) -> None:
-        """Clique num artigo de uma ferramenta de análise → abre na aba de Leitura."""
-        self._tabs.setCurrentIndex(self._reading_tab_index)
+        """Clique num artigo de uma ferramenta de análise → abre na página de Leitura."""
+        self._stack.setCurrentWidget(self._splitter)
+        self._nav.set_active("leitura")
         self._reader.show_article(article_id)
 
     def _open_settings(self) -> None:

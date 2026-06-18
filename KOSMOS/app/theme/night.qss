@@ -458,3 +458,54 @@ QToolTip {
     border-radius: 2px;
     font-size: 12px;
 }
+
+/* ── Nav rail (barra de navegação por páginas — design antigo) ─────────────── */
+QWidget#navRail {
+    background-color: #231D14;
+    border-right: 1px solid #3D3226;
+}
+QWidget#navRailHeader {
+    background-color: #231D14;
+    border-bottom: 1px solid #3D3226;
+}
+QPushButton#navRailTitle {
+    background: transparent;
+    color: #E8D9BE;
+    font-family: "Special Elite", "Courier New", monospace;
+    font-size: 15px;
+    border: none;
+    text-align: left;
+    padding: 0;
+}
+QPushButton#navRailTitle:hover { color: #C9A86A; }
+QPushButton#navIconBtn {
+    background: transparent;
+    color: #B8A882;
+    border: none;
+    font-size: 18px;
+    padding: 0;
+    border-radius: 2px;
+}
+QPushButton#navIconBtn:hover { background-color: #2E2618; color: #E8D9BE; }
+QScrollArea#navRailScroll { background-color: #231D14; border: none; }
+QWidget#navRailContent { background-color: #231D14; }
+QFrame#navDivider { background-color: #3D3226; border: none; max-height: 1px; margin: 4px 12px; }
+QPushButton#navItem {
+    background: transparent;
+    color: #B8A882;
+    border: none;
+    border-left: 3px solid transparent;
+    border-radius: 0;
+    text-align: left;
+    padding: 5px 12px 5px 9px;
+    font-family: "Special Elite", "Courier New", monospace;
+    font-size: 12px;
+    letter-spacing: 0.05em;
+}
+QPushButton#navItem:hover { background-color: #2A2218; color: #E8D9BE; }
+QPushButton#navItem:checked {
+    background-color: #2E2618;
+    color: #E8D9BE;
+    border-left: 3px solid #C9A86A;
+}
+QStackedWidget#centralStack { background-color: #1C1610; }
