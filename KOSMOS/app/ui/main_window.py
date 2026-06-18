@@ -64,6 +64,7 @@ from app.ui.views.feed_sidebar import ALL_FEEDS_ID, FeedSidebar
 from app.ui.views.reader_pane import ReaderPane
 from app.ui.views.settings_view import SettingsView
 from app.ui.views.dashboard_view import DashboardView
+from app.ui.views.saved_view import SavedView
 from app.ui.nav_rail import NavRail
 from app.utils.config import KosmosConfig, save_config
 
@@ -137,12 +138,15 @@ class MainWindow(QMainWindow):
         self._settings_view = SettingsView(self.config)
         self._settings_view.feeds_changed.connect(self._reload_after_settings)
         self._settings_view.config_saved.connect(self._reload_after_settings)
+        self._saved_view = SavedView()
+        self._saved_view.article_selected.connect(self._open_article_from_saved)
         self._stack = QStackedWidget()
         self._stack.setObjectName("centralStack")
         self._stack.addWidget(self._dashboard)       # página "dashboard"
         self._stack.addWidget(splitter)              # página "leitura"
         self._stack.addWidget(self._analysis_tab)    # página "analise"
         self._stack.addWidget(self._settings_view)   # página "settings"
+        self._stack.addWidget(self._saved_view)      # página "salvos"
 
         self._nav = NavRail(theme=self.config.theme)
         self._nav.nav_requested.connect(self._on_nav)
@@ -172,6 +176,8 @@ class MainWindow(QMainWindow):
         # "Adicionar à investigação" — leitor e menu de contexto do card.
         self._reader.add_to_investigation_requested.connect(self._on_add_to_investigation)
         self._article_list.add_to_investigation_requested.connect(self._on_add_to_investigation)
+        # Arquivar/desarquivar (is_saved) — botão do leitor.
+        self._reader.archive_toggle_requested.connect(self._on_archive_toggle)
         # Exportar destaques de um feed (menu de contexto na sidebar).
         self._sidebar.export_highlights_requested.connect(self._on_export_feed_highlights)
 
@@ -244,6 +250,9 @@ class MainWindow(QMainWindow):
         elif view == "settings":
             self._stack.setCurrentWidget(self._settings_view)
             self._settings_view.reload_feeds()
+        elif view == "salvos":
+            self._stack.setCurrentWidget(self._saved_view)
+            self._saved_view.load()
 
     def _reload_analysis_views(self) -> None:
         """Recarrega as ferramentas de análise (cobre o que mudou desde a última visita)."""
@@ -266,6 +275,43 @@ class MainWindow(QMainWindow):
         self._stack.setCurrentWidget(self._splitter)
         self._nav.set_active("leitura")
         self._reader.show_article(article_id)
+
+    def _open_article_from_saved(self, article_id: int) -> None:
+        """Clique num artigo salvo → abre na página de Leitura."""
+        self._stack.setCurrentWidget(self._splitter)
+        self._nav.set_active("leitura")
+        self._reader.show_article(article_id)
+
+    def _on_archive_toggle(self, article_id: int, want_saved: bool) -> None:
+        """Arquiva (.md + is_saved=1) ou desarquiva (is_saved=0) o artigo."""
+        import sqlite3
+
+        from app.core.database import get_conn
+        if want_saved:
+            try:
+                from app.core.archiver import archive_article
+                path = archive_article(article_id, self.config.archive_path)
+                self.statusBar().showMessage(f"Artigo arquivado: {path.name}", 4000)
+                log.info("Artigo %d arquivado em %s.", article_id, path)
+            except (ValueError, OSError) as exc:
+                log.error("Falha ao arquivar artigo %d: %s", article_id, exc)
+                self.statusBar().showMessage(f"Não foi possível arquivar: {exc}", 5000)
+                return
+        else:
+            conn = get_conn()
+            try:
+                conn.execute("UPDATE articles SET is_saved = 0 WHERE id = ?", (article_id,))
+                conn.commit()
+                self.statusBar().showMessage("Artigo removido dos salvos.", 3000)
+                log.info("Artigo %d desarquivado (is_saved=0).", article_id)
+            except sqlite3.Error as exc:
+                log.error("Falha ao desarquivar artigo %d: %s", article_id, exc)
+                self.statusBar().showMessage("Não foi possível remover dos salvos.", 4000)
+                return
+            finally:
+                conn.close()
+        self._reader.set_saved_state(article_id, want_saved)
+        self._saved_view.load()
 
     def _reload_after_settings(self) -> None:
         """Recarrega sidebar e lista após mudanças nas Configurações (feeds/tema)."""

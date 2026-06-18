@@ -140,6 +140,7 @@ class NavRail(QWidget):
         # Itens que mapeiam para conteúdo v3 existente.
         cl.addWidget(self._nav_btn("★", "Dashboard", "dashboard"))
         cl.addWidget(self._nav_btn("☰", "Leitura", "leitura"))
+        cl.addWidget(self._nav_btn("♥", "Salvos", "salvos"))
         cl.addWidget(self._nav_btn("≡", "Análise", "analise"))
         cl.addSpacing(4)
         cl.addWidget(_Divider())

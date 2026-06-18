@@ -263,3 +263,43 @@ def test_on_article_translated_ignores_other(env):
     reader.show_article(aid)
     reader.on_article_translated(aid + 999, "não deve aparecer")
     assert reader.current_body_html() == "EN body"
+
+
+# ---------------------------------------------------------------------------
+# Arquivar / desarquivar (is_saved) — R5
+# ---------------------------------------------------------------------------
+
+def test_archive_button_label_unsaved(env):
+    reader, conn, fid = env
+    aid = _insert_article(conn, fid, content_text="x")   # is_saved default 0
+    reader.show_article(aid)
+    assert reader._archive_btn.text() == "Arquivar"
+
+
+def test_archive_button_label_saved(env):
+    reader, conn, fid = env
+    aid = _insert_article(conn, fid, content_text="x")
+    conn.execute("UPDATE articles SET is_saved = 1 WHERE id = ?", (aid,))
+    conn.commit()
+    reader.show_article(aid)
+    assert reader._archive_btn.text() == "Desarquivar"
+
+
+def test_archive_click_emits_want_saved(env):
+    reader, conn, fid = env
+    aid = _insert_article(conn, fid, content_text="x")
+    reader.show_article(aid)
+    got = []
+    reader.archive_toggle_requested.connect(lambda a, w: got.append((a, w)))
+    reader._on_archive_clicked()
+    assert got == [(aid, True)]   # não-salvo → quer arquivar
+
+
+def test_set_saved_state_updates_button(env):
+    reader, conn, fid = env
+    aid = _insert_article(conn, fid, content_text="x")
+    reader.show_article(aid)
+    reader.set_saved_state(aid, True)
+    assert reader._archive_btn.text() == "Desarquivar"
+    reader.set_saved_state(aid, False)
+    assert reader._archive_btn.text() == "Arquivar"

@@ -572,3 +572,8 @@ QGroupBox#settingsSection::title {
     color: #D4A820;
     font-family: "Special Elite", "Courier New", monospace;
 }
+
+/* ── Salvos / Arquivo (design antigo) ─────────────────────────────────────── */
+QWidget#savedHeader { background-color: #181D28; border-bottom: 1px solid #2E3445; }
+QLabel#savedTitle { color: #E8DFC8; }
+QFrame#savedSep { background-color: #2E3445; max-height: 1px; }

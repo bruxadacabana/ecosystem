@@ -202,6 +202,7 @@ class ReaderPane(QWidget):
     translate_requested = Signal(int)    # article_id — pedido P2 de tradução do corpo
     analysis_requested = Signal(int)     # article_id — pedido P1 de análise completa (Call B)
     add_to_investigation_requested = Signal(int)  # article_id — adicionar a uma pasta de investigação
+    archive_toggle_requested = Signal(int, bool)  # (article_id, want_saved) — arquivar/desarquivar
 
     def __init__(self, theme: str = "day", parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -211,6 +212,7 @@ class ReaderPane(QWidget):
         self._orig_body: str = ""              # corpo no idioma original (content_text/excerpt)
         self._translated_body: str = ""        # corpo traduzido (content_text_translated)
         self._showing_translation: bool = False
+        self._current_is_saved: bool = False   # artigo arquivado (is_saved=1)?
         self._body_html_cache: str = ""        # último HTML do corpo renderizado no webview
         self._current_highlights: list[dict] = []  # destaques do artigo atual (Fase 8)
         self._current_highlight_id: int | None = None
@@ -292,6 +294,11 @@ class ReaderPane(QWidget):
         self._investigation_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self._investigation_btn.clicked.connect(self._on_add_to_investigation)
         btn_row.addWidget(self._investigation_btn)
+        self._archive_btn = QPushButton("Arquivar")
+        self._archive_btn.setObjectName("reader_archive_btn")
+        self._archive_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._archive_btn.clicked.connect(self._on_archive_clicked)
+        btn_row.addWidget(self._archive_btn)
         btn_row.addStretch(1)
         tl.addLayout(btn_row)
 
@@ -371,7 +378,7 @@ class ReaderPane(QWidget):
                 """
                 SELECT a.id, a.title, a.author, a.published_at,
                        a.article_type, a.estimated_reading_min,
-                       a.language_detected, a.content_excerpt, a.is_read,
+                       a.language_detected, a.content_excerpt, a.is_read, a.is_saved,
                        a.url, a.content_text, a.content_text_translated, a.is_scraped,
                        a.ai_summary, a.ai_sentiment, a.ai_clickbait_score, a.ai_tags,
                        a.ai_five_ws, a.ai_entities, a.ai_bias,
@@ -441,6 +448,8 @@ class ReaderPane(QWidget):
         self._placeholder.hide()
         self._set_content_visible(True)
 
+        self._current_is_saved = bool(data.get("is_saved"))
+        self._update_archive_btn()
         self._title_lbl.setText(data.get("title") or "(sem título)")
 
         meta_parts: list[str] = []
@@ -685,6 +694,25 @@ class ReaderPane(QWidget):
         """Botão 'Adicionar à investigação' → entrega o artigo atual ao main_window."""
         if self._current_article_id is not None:
             self.add_to_investigation_requested.emit(self._current_article_id)
+
+    def _update_archive_btn(self) -> None:
+        """Rótulo do botão conforme o estado: Arquivar (não salvo) / Desarquivar (salvo)."""
+        self._archive_btn.setText("Desarquivar" if self._current_is_saved else "Arquivar")
+
+    def _on_archive_clicked(self) -> None:
+        """Botão Arquivar/Desarquivar → pede ao main_window para alternar is_saved."""
+        if self._current_article_id is None:
+            return
+        want_saved = not self._current_is_saved
+        log.info("Arquivar=%s solicitado para o artigo %d.", want_saved, self._current_article_id)
+        self.archive_toggle_requested.emit(self._current_article_id, want_saved)
+
+    def set_saved_state(self, article_id: int, is_saved: bool) -> None:
+        """Slot: o main_window confirmou o novo estado de arquivamento; atualiza o botão."""
+        if article_id != self._current_article_id:
+            return
+        self._current_is_saved = is_saved
+        self._update_archive_btn()
 
     # ------------------------------------------------------------------
     # Destaques / anotações (Fase 8)
