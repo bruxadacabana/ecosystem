@@ -430,13 +430,15 @@ async def _searxng_alive(url: str) -> bool:
         return False
 
 
-async def web_search_backend_status() -> dict:
+async def web_search_backend_status(query: str = "") -> dict:
     """Estado do backend de busca web, para o banner da página de busca.
 
     Retorna um dict com: qual SearXNG está servindo (remoto/local/vendor/None),
     se está degradado (um backend de maior prioridade caiu), se nenhum SearXNG
-    responde, e se a Marginalia está sem chave própria. `warn` indica se há algo
-    a sinalizar (nenhum SearXNG, ou degradação) — o banner some quando nominal.
+    responde, engines que não responderam na última busca (`unresponsive_engines`,
+    quando `query` casa com o diagnóstico recente) e se a Marginalia está sem chave
+    própria. `warn` indica se há algo a sinalizar (nenhum SearXNG, degradação, ou
+    engines fora) — o banner some quando nominal.
     """
     cands = _searxng_candidates()
     first_label = cands[0][0] if cands else None
@@ -451,15 +453,23 @@ async def web_search_backend_status() -> dict:
     cfg = _akasha_cfg()
     marginalia_public = not (cfg.get("marginalia_api_key", "") or "").strip()
 
+    # Engines sem resposta na última busca — só se o diagnóstico for desta query e recente.
+    unresponsive: list[str] = []
+    if query:
+        diag = _LAST_WEB_DIAG
+        if diag.get("query") == query and (time.time() - float(diag.get("ts", 0.0))) < _DIAG_TTL:
+            unresponsive = list(diag.get("unresponsive") or [])
+
     status = {
-        "active_label":      label,          # "remoto" | "local" | "vendor" | None
-        "active_url":        url,
-        "searxng_down":      searxng_down,
-        "degraded":          degraded,
-        "marginalia_public": marginalia_public,
-        "warn":              searxng_down or degraded,
+        "active_label":        label,        # "remoto" | "local" | "vendor" | None
+        "active_url":          url,
+        "searxng_down":        searxng_down,
+        "degraded":            degraded,
+        "unresponsive_engines": unresponsive,
+        "marginalia_public":   marginalia_public,
+        "warn":                searxng_down or degraded or bool(unresponsive),
     }
-    log.debug("web_search_backend_status: %s", status)
+    log.debug("web_search_backend_status(%r): %s", query, status)
     return status
 
 
@@ -482,6 +492,26 @@ async def _active_searxng() -> tuple[str, str] | None:
 
 _FETCH_PAGE_SIZE = 25   # resultados por página no fetch paralelo
 _FETCH_SEMAPHORE = asyncio.Semaphore(2)  # máx 2 páginas SearXNG simultâneas
+
+# Diagnóstico da ÚLTIMA busca web (para o banner reportar engines que não
+# responderam). Single-user/local: last-write-wins. TTL evita mostrar dado velho.
+_LAST_WEB_DIAG: dict = {"query": "", "unresponsive": [], "ts": 0.0}
+_DIAG_TTL = 120.0  # segundos
+
+
+def get_last_web_diag() -> dict:
+    """Diagnóstico da última busca SearXNG (cópia): query, unresponsive, ts."""
+    return dict(_LAST_WEB_DIAG)
+
+
+def _engine_name(item) -> str:
+    """Extrai o nome do engine de uma entrada de `unresponsive_engines` (formato
+    varia entre versões do SearXNG: ['bing','timeout'] | {'name':...} | 'bing')."""
+    if isinstance(item, (list, tuple)) and item:
+        return str(item[0]).strip()
+    if isinstance(item, dict):
+        return str(item.get("name") or item.get("engine") or "").strip()
+    return str(item or "").strip()
 
 
 def _parse_searxng_results(raw: list) -> list[SearchResult]:
@@ -510,6 +540,8 @@ async def _fetch_searxng(
     lang: código ISO 639-1 (ex: "pt", "en"). Vazio = sem restrição de idioma.
     SearXNG aceita o param `language` para filtrar resultados por idioma.
     """
+    unresponsive: list[str] = []  # engines que o SearXNG reportou como sem resposta
+
     async def _one_page(client: httpx.AsyncClient, pageno: int) -> list[SearchResult]:
         async with _FETCH_SEMAPHORE:
             try:
@@ -521,12 +553,21 @@ async def _fetch_searxng(
                     params=params,
                 )
                 resp.raise_for_status()
-                return _parse_searxng_results(resp.json().get("results") or [])
+                data = resp.json()
+                for u in (data.get("unresponsive_engines") or []):
+                    name = _engine_name(u)
+                    if name:
+                        unresponsive.append(name)  # list.append é atômico (GIL)
+                return _parse_searxng_results(data.get("results") or [])
             except Exception:
                 return []
 
     async with httpx.AsyncClient(timeout=8.0) as client:
         pages = await asyncio.gather(*[_one_page(client, i + 1) for i in range(n_pages)])
+
+    # Registra o diagnóstico desta busca (para o banner reportar engines fora).
+    global _LAST_WEB_DIAG
+    _LAST_WEB_DIAG = {"query": query, "unresponsive": sorted(set(unresponsive)), "ts": time.time()}
 
     combined: list[SearchResult] = []
     for page in pages:

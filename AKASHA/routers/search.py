@@ -995,15 +995,16 @@ async def search_summarize(
 
 
 @router.get("/search/backend-status", response_class=HTMLResponse)
-async def search_backend_status(request: Request) -> HTMLResponse:
+async def search_backend_status(request: Request, q: str = "") -> HTMLResponse:
     """Fragmento HTMX (auto-carregado): banner de status do backend de busca web.
 
     Vazio quando nominal (SearXNG de maior prioridade servindo). Sinaliza quando
-    nenhum SearXNG responde ou quando um backend de menor prioridade está em uso.
+    nenhum SearXNG responde, quando um backend de menor prioridade está em uso, ou
+    quando engines não responderam na busca `q` (diagnóstico recente).
     """
     from services.web_search import web_search_backend_status
     try:
-        status = await web_search_backend_status()
+        status = await web_search_backend_status(q)
     except Exception as exc:
         log.debug("search_backend_status falhou: %s", exc)
         return HTMLResponse("")

@@ -18,6 +18,12 @@
       {% elif status.active_label == 'vendor' %}o SearXNG <strong>vendorizado</strong>
       {% else %}<strong>{{ status.active_label }}</strong>{% endif %}
       ({{ status.active_url }}).
+    {% elif status.unresponsive_engines %}
+      <strong>Resultado incompleto.</strong> Alguns engines não responderam nesta busca.
+    {% endif %}
+    {% if status.unresponsive_engines %}
+      <br><span style="opacity:.85;">Engines fora nesta busca:
+      {{ status.unresponsive_engines | join(', ') }}.</span>
     {% endif %}
     {% if status.marginalia_public %}
       <br><span style="opacity:.75;">Marginalia usando chave pública (rate limit compartilhado) —

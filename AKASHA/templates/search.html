@@ -6,7 +6,7 @@
 {% block content %}
 <!-- ─── Banner de status do backend de busca (auto-carregado via HTMX) ─── -->
 {% if query %}
-<div hx-get="/search/backend-status" hx-trigger="load" hx-swap="outerHTML"></div>
+<div hx-get="/search/backend-status?q={{ query | urlencode }}" hx-trigger="load" hx-swap="outerHTML"></div>
 {% endif %}
 
 <!-- ─── Aviso sites sem cadastro ────────────────────────────────── -->

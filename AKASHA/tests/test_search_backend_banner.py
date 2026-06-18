@@ -8,6 +8,9 @@ Testes do banner de status do backend de busca web.
 """
 from __future__ import annotations
 
+import time
+from unittest.mock import AsyncMock, patch
+
 import httpx
 import pytest
 
@@ -76,10 +79,74 @@ async def test_status_workpc_vendor_only_is_nominal(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_status_unresponsive_triggers_when_query_matches(monkeypatch):
+    _patch(monkeypatch,
+           [("remoto", "http://r:8080")],
+           ("remoto", "http://r:8080"),
+           {"marginalia_api_key": "k"})
+    monkeypatch.setattr(ws, "_LAST_WEB_DIAG",
+                        {"query": "q1", "unresponsive": ["bing", "google"], "ts": time.time()})
+    s = await ws.web_search_backend_status("q1")
+    assert s["warn"] is True
+    assert s["searxng_down"] is False and s["degraded"] is False
+    assert s["unresponsive_engines"] == ["bing", "google"]
+
+
+@pytest.mark.asyncio
+async def test_status_unresponsive_ignored_on_query_mismatch(monkeypatch):
+    _patch(monkeypatch,
+           [("remoto", "http://r:8080")],
+           ("remoto", "http://r:8080"),
+           {"marginalia_api_key": "k"})
+    monkeypatch.setattr(ws, "_LAST_WEB_DIAG",
+                        {"query": "outra", "unresponsive": ["bing"], "ts": time.time()})
+    s = await ws.web_search_backend_status("q1")
+    assert s["unresponsive_engines"] == []
+    assert s["warn"] is False
+
+
+@pytest.mark.asyncio
+async def test_status_unresponsive_ignored_when_stale(monkeypatch):
+    _patch(monkeypatch,
+           [("remoto", "http://r:8080")],
+           ("remoto", "http://r:8080"),
+           {"marginalia_api_key": "k"})
+    monkeypatch.setattr(ws, "_LAST_WEB_DIAG",
+                        {"query": "q1", "unresponsive": ["bing"], "ts": time.time() - ws._DIAG_TTL - 5})
+    s = await ws.web_search_backend_status("q1")
+    assert s["unresponsive_engines"] == []
+    assert s["warn"] is False
+
+
+@pytest.mark.asyncio
+async def test_fetch_searxng_records_unresponsive_engines(monkeypatch):
+    payload = {
+        "results": [{"title": "T", "url": "https://x.com", "content": "c"}],
+        "unresponsive_engines": [["bing", "timeout"], "qwant"],
+    }
+    resp = httpx.Response(200, json=payload, request=httpx.Request("GET", "http://sx/search"))
+
+    async def _get(*a, **k):
+        return resp
+
+    client = AsyncMock()
+    client.__aenter__ = AsyncMock(return_value=client)
+    client.__aexit__ = AsyncMock(return_value=False)
+    client.get = _get
+
+    with patch.object(httpx, "AsyncClient", return_value=client):
+        await ws._fetch_searxng("minha query", 10, "http://sx", n_pages=1)
+
+    diag = ws.get_last_web_diag()
+    assert diag["query"] == "minha query"
+    assert diag["unresponsive"] == ["bing", "qwant"]  # sorted(set), nome extraído
+
+
+@pytest.mark.asyncio
 async def test_endpoint_renders_banner_when_warn(monkeypatch):
-    async def _st():
+    async def _st(q=""):
         return {"active_label": None, "active_url": "", "searxng_down": True,
-                "degraded": False, "marginalia_public": True, "warn": True}
+                "degraded": False, "unresponsive_engines": [], "marginalia_public": True, "warn": True}
     monkeypatch.setattr(ws, "web_search_backend_status", _st)
     from main import app
     async with httpx.AsyncClient(
@@ -93,9 +160,9 @@ async def test_endpoint_renders_banner_when_warn(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_endpoint_empty_when_nominal(monkeypatch):
-    async def _st():
+    async def _st(q=""):
         return {"active_label": "remoto", "active_url": "http://r", "searxng_down": False,
-                "degraded": False, "marginalia_public": False, "warn": False}
+                "degraded": False, "unresponsive_engines": [], "marginalia_public": False, "warn": False}
     monkeypatch.setattr(ws, "web_search_backend_status", _st)
     from main import app
     async with httpx.AsyncClient(
