@@ -15,7 +15,7 @@ Buscador pessoal local com camada de assistente de IA. Dois sistemas independent
 AKASHA (ferramenta)              AKASHA (assistente — Akasha)
 ──────────────────────────       ─────────────────────────────────
 Busca FTS5 + web (SearXNG)       Memória pessoal (personal_memory)
-Crawling de sites                Loop de reflexão periódico (24h)
+Crawling de sites                Loop de reflexão (agendado p/ relógio)
 Indexação de páginas             Insights proativos (overlay)
 Arquivamento em ecosystem_root   Estado afetivo (appraisal)
 Download de papers (Unpaywall)   Análise de padrões de uso
@@ -176,7 +176,7 @@ O LLM no AKASHA age **apenas** na camada de análise interna (reflexão, insight
 - Feedback da usuária (✓ / ✗ + motivo) molda o peso das memórias futuras
 - Nunca exposta ao RAG de outros apps, nunca indexada pelo ecossistema
 
-### Loop de reflexão (a cada 24h)
+### Loop de reflexão (agendado pelo relógio)
 
 Quando LOGOS está disponível, a Akasha lê os seguintes dados para gerar uma reflexão:
 
@@ -187,9 +187,14 @@ Quando LOGOS está disponível, a Akasha lê os seguintes dados para gerar uma r
 | Sites abertos via AKASHA (extensão) | `activity_log` tipo `visit` | últimas 20 |
 | Domínios mais frequentados | `activity_log` agregado | top 8 com contagem |
 | Páginas indexadas recentemente | `page_knowledge` | últimas 10 |
+| **Atividade em outros dispositivos** | `shared_history` (sync_root) | buscas/visitas por máquina (exclui a atual) |
 | Memórias anteriores (confirmadas e neutras) | `personal_memory` | até 5 |
 
+A "atividade em outros dispositivos" vem do store compartilhado (`shared_history`), discriminada por máquina de origem — é como a Akasha aprende com o uso em todas as máquinas (os interesses já são cross-device via `shared_topic_profile`). Pop-ups/insights **não** usam dados cross-device — são sempre sobre o momento atual.
+
 Com esse contexto, gera uma reflexão em uma frase — uma conexão, padrão de comportamento ou observação genuína. Respostas genéricas, muito curtas ou vazias são descartadas automaticamente.
+
+**Agendamento (ancorado no relógio):** a reflexão é registrada em `{data_dir}/.reflection_state.json` (`last_reflection_at`). No startup, o loop espera uma carência (~5 min, para o crawl/backfill inicial assentar) e depois, em poll horário, reflete se já passou ~24h (relógio) desde a última. Roda como **P3** no LOGOS (atrasada sob carga, nunca atropela o backfill). Isso garante que a reflexão rode mesmo com a AKASHA aberta de forma intermitente — não depende de 24h de processo ligado.
 
 ### Insights proativos
 
@@ -571,7 +576,7 @@ AKASHA/
 │   ├── crawler.py              Spider assíncrono + extração de links
 │   ├── crawler_scheduler.py    Agendamento de recrawl por site
 │   ├── knowledge_worker.py     Pipeline LLM: tópicos + entidades de páginas visitadas
-│   ├── reflection_loop.py      Loop de reflexão periódica da Akasha (24h)
+│   ├── reflection_loop.py      Loop de reflexão periódica da Akasha (relógio)
 │   ├── session_insight.py      Geração de insights a partir da memória
 │   ├── personal_memory.py      Store isolado de memória da Akasha
 │   ├── affective_state.py      Appraisals + estado emocional
