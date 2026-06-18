@@ -63,11 +63,11 @@ def test_single_active_button(qapp):
     assert not rail._buttons["leitura"].isChecked()    # só um ativo por vez
 
 
-def test_title_click_selects_leitura(qapp):
+def test_title_click_selects_dashboard(qapp):
     rail = NavRail(theme="day")
     got: list[str] = []
     rail.nav_requested.connect(got.append)
     titles = [b for b in rail.findChildren(QPushButton) if b.objectName() == "navRailTitle"]
     assert len(titles) == 1
     titles[0].click()
-    assert got == ["leitura"]
+    assert got == ["dashboard"]   # título KOSMOS → tela inicial (Dashboard)

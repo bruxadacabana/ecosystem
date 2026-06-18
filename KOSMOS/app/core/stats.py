@@ -10,6 +10,7 @@ from __future__ import annotations
 import json
 import logging
 import sqlite3
+from collections import Counter
 from datetime import datetime, timedelta, timezone
 
 from app.core.database import get_conn
@@ -73,6 +74,51 @@ def top_feeds(limit: int = 8, conn: sqlite3.Connection | None = None) -> list[tu
     finally:
         if should_close:
             _conn.close()
+
+
+def top_tags(limit: int = 8, conn: sqlite3.Connection | None = None) -> list[tuple[str, int]]:
+    """Tags de AI mais frequentes (parse do JSON `ai_tags`), maior primeiro."""
+    _conn = conn if conn is not None else get_conn()
+    should_close = conn is None
+    try:
+        rows = _conn.execute(
+            "SELECT ai_tags FROM articles WHERE ai_tags IS NOT NULL AND ai_tags != ''"
+        ).fetchall()
+    except sqlite3.Error as exc:
+        log.error("stats: falha em top_tags: %s", exc)
+        return []
+    finally:
+        if should_close:
+            _conn.close()
+    counter: Counter = Counter()
+    for r in rows:
+        try:
+            tags = json.loads(r["ai_tags"])
+        except (ValueError, TypeError):
+            continue
+        if isinstance(tags, list):
+            for t in tags:
+                t = str(t).strip()
+                if t:
+                    counter[t] += 1
+    return counter.most_common(limit)
+
+
+def totals(conn: sqlite3.Connection | None = None) -> dict:
+    """Contagens gerais para o resumo do dashboard: artigos, lidos, não-lidos, feeds."""
+    _conn = conn if conn is not None else get_conn()
+    should_close = conn is None
+    try:
+        total = _conn.execute("SELECT COUNT(*) FROM articles").fetchone()[0]
+        read = _conn.execute("SELECT COUNT(*) FROM articles WHERE is_read = 1").fetchone()[0]
+        feeds = _conn.execute("SELECT COUNT(*) FROM feeds").fetchone()[0]
+    except sqlite3.Error as exc:
+        log.error("stats: falha em totals: %s", exc)
+        return {"total": 0, "read": 0, "unread": 0, "feeds": 0}
+    finally:
+        if should_close:
+            _conn.close()
+    return {"total": total, "read": read, "unread": total - read, "feeds": feeds}
 
 
 def sentiment_over_time(days: int = 14, conn: sqlite3.Connection | None = None) -> list[dict]:

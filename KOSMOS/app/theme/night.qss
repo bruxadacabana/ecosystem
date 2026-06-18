@@ -536,3 +536,18 @@ QPushButton#navItem:checked {
     border-left: 3px solid #D4A820;
 }
 QStackedWidget#centralStack { background-color: #12161E; }
+
+/* ── Dashboard (tela inicial — design antigo) ─────────────────────────────── */
+QLabel#dashboardTitle { color: #E8DFC8; }
+QLabel#dashboardSummary { color: #9A9080; }
+QWidget#dashboardPanel {
+    background-color: #181D28;
+    border: 1px solid #2E3445;
+    border-radius: 4px;
+}
+QLabel#dashboardPanelTitle { color: #D4A820; letter-spacing: 0.15em; }
+QFrame#dashboardPanelSep { background-color: #2E3445; max-height: 1px; }
+QLabel#dashboardStatName { color: #E8D9BE; }
+QLabel#dashboardStatCount { color: #9A9080; }
+QFrame#dashboardStatBar { background-color: #D4A820; border: none; }
+QLabel#dashboardStatEmpty { color: #4A5266; }

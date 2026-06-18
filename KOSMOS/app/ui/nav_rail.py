@@ -104,7 +104,7 @@ class NavRail(QWidget):
             tf = QFont("Courier New")
         tf.setPointSize(15)
         title.setFont(tf)
-        title.clicked.connect(lambda: self._select("leitura"))
+        title.clicked.connect(lambda: self._select("dashboard"))
         h.addWidget(title, 1)
 
         refresh_btn = QPushButton("↻")
@@ -139,7 +139,8 @@ class NavRail(QWidget):
         cl.setContentsMargins(0, 6, 0, 6)
         cl.setSpacing(1)
 
-        # Itens que mapeiam para conteúdo v3 existente (fundação).
+        # Itens que mapeiam para conteúdo v3 existente.
+        cl.addWidget(self._nav_btn("★", "Dashboard", "dashboard"))
         cl.addWidget(self._nav_btn("☰", "Leitura", "leitura"))
         cl.addWidget(self._nav_btn("≡", "Análise", "analise"))
         cl.addSpacing(4)

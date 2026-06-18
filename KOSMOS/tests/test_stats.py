@@ -23,6 +23,8 @@ from app.core.stats import (
     sentiment_distribution,
     sentiment_over_time,
     top_feeds,
+    top_tags,
+    totals,
 )
 
 _counter = itertools.count()
@@ -86,6 +88,34 @@ def test_top_feeds_order(db):
     _article(db, f2, is_read=1)
     out = top_feeds(conn=db)
     assert out[0] == ("Mais", 3) and out[1] == ("Menos", 1)
+
+
+def test_top_tags_counts_and_orders(db):
+    fid = _feed(db)
+    db.execute("INSERT INTO articles (feed_id, url, title, ai_tags) VALUES (?,?,?,?)",
+               (fid, "https://j.com/t1", "T", '["ia", "python"]'))
+    db.execute("INSERT INTO articles (feed_id, url, title, ai_tags) VALUES (?,?,?,?)",
+               (fid, "https://j.com/t2", "T", '["ia"]'))
+    db.commit()
+    out = top_tags(conn=db)
+    assert out[0] == ("ia", 2)
+    assert ("python", 1) in out
+
+
+def test_top_tags_ignores_invalid_json(db):
+    fid = _feed(db)
+    db.execute("INSERT INTO articles (feed_id, url, title, ai_tags) VALUES (?,?,?,?)",
+               (fid, "https://j.com/t3", "T", "não json"))
+    db.commit()
+    assert top_tags(conn=db) == []
+
+
+def test_totals(db):
+    fid = _feed(db)
+    _article(db, fid, is_read=1)
+    _article(db, fid, is_read=0)
+    t = totals(conn=db)
+    assert t == {"total": 2, "read": 1, "unread": 1, "feeds": 1}
 
 
 def test_sentiment_distribution(db):

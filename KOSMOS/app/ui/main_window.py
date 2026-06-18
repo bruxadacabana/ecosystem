@@ -63,6 +63,7 @@ from app.ui.views.alerts_view import AlertsView
 from app.ui.views.feed_sidebar import ALL_FEEDS_ID, FeedSidebar
 from app.ui.views.reader_pane import ReaderPane
 from app.ui.views.settings_window import SettingsDialog
+from app.ui.views.dashboard_view import DashboardView
 from app.ui.nav_rail import NavRail
 from app.utils.config import KosmosConfig, save_config
 
@@ -131,9 +132,11 @@ class MainWindow(QMainWindow):
         self._analysis_tab.set_pane("stats", self._stats_view)
 
         # Shell (design antigo): nav rail à esquerda + pilha de páginas.
-        # Páginas: Leitura (splitter 3-painéis) e Análise (ferramentas de investigação).
+        # Páginas: Dashboard (tela inicial), Leitura (splitter 3-painéis) e Análise.
+        self._dashboard = DashboardView(theme=self.config.theme)
         self._stack = QStackedWidget()
         self._stack.setObjectName("centralStack")
+        self._stack.addWidget(self._dashboard)     # página "dashboard"
         self._stack.addWidget(splitter)            # página "leitura"
         self._stack.addWidget(self._analysis_tab)  # página "analise"
 
@@ -151,7 +154,9 @@ class MainWindow(QMainWindow):
         row.addWidget(self._stack, 1)
         self.setCentralWidget(central)
 
-        self._nav.set_active("leitura")
+        # Tela inicial = Dashboard (design antigo).
+        self._stack.setCurrentWidget(self._dashboard)
+        self._nav.set_active("dashboard")
 
         bar = QStatusBar()
         self.setStatusBar(bar)
@@ -219,11 +224,15 @@ class MainWindow(QMainWindow):
     def _initial_load(self) -> None:
         self._sidebar.load_feeds()
         self._article_list.load_articles(ALL_FEEDS_ID)
+        self._dashboard.load()
         log.info("Carga inicial concluída.")
 
     def _on_nav(self, view: str) -> None:
         """Troca a página ativa no stack (nav rail do design antigo)."""
-        if view == "leitura":
+        if view == "dashboard":
+            self._stack.setCurrentWidget(self._dashboard)
+            self._dashboard.load()
+        elif view == "leitura":
             self._stack.setCurrentWidget(self._splitter)
         elif view == "analise":
             self._stack.setCurrentWidget(self._analysis_tab)

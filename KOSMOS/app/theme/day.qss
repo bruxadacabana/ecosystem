@@ -420,3 +420,18 @@ QLabel#lang_badge {
 /* Snippet de resumo (serifado) */
 QLabel#card_summary { color: #5a4e38; font-size: 12px; }
 QLabel#placeholder { color: #a89878; font-size: 13px; }
+
+/* ── Dashboard (tela inicial — design antigo) ─────────────────────────────── */
+QLabel#dashboardTitle { color: #2c2416; }
+QLabel#dashboardSummary { color: #8b7355; }
+QWidget#dashboardPanel {
+    background-color: #e8ddc8;
+    border: 1px solid #c4b49a;
+    border-radius: 4px;
+}
+QLabel#dashboardPanelTitle { color: #8b7355; letter-spacing: 0.15em; }
+QFrame#dashboardPanelSep { background-color: #c4b49a; max-height: 1px; }
+QLabel#dashboardStatName { color: #2c2416; }
+QLabel#dashboardStatCount { color: #8b7355; }
+QFrame#dashboardStatBar { background-color: #8b7355; border: none; }
+QLabel#dashboardStatEmpty { color: #a89878; }
