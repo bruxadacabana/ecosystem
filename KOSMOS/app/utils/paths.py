@@ -14,7 +14,8 @@ if str(_PROGRAM_FILES) not in sys.path:
     sys.path.insert(0, str(_PROGRAM_FILES))
 
 # ---------------------------------------------------------------------------
-# Dados locais (banco, cache, logs) — não sincronizados pelo Syncthing
+# Caminhos de dados. Cache/logs ficam locais; o BANCO fica no sync_root/kosmos/
+# (sincronizado via Syncthing + backup versionado pelo HUB em .backup/kosmos/).
 # ---------------------------------------------------------------------------
 
 def _local_data_dir() -> Path:
@@ -27,8 +28,31 @@ def _local_data_dir() -> Path:
 
 
 LOCAL_DATA_DIR: Path = _local_data_dir()
-DB_PATH:        Path = LOCAL_DATA_DIR / "kosmos.db"
+LEGACY_LOCAL_DB: Path = LOCAL_DATA_DIR / "kosmos.db"  # local antigo (migrado p/ sync_root)
 LOG_DIR:        Path = LOCAL_DATA_DIR / "logs"   # fallback local (sem sync_root)
+
+
+def _resolve_db_path() -> Path:
+    """Resolve `{sync_root}/kosmos/kosmos.db` (sincronizado entre máquinas).
+
+    O banco mora na pasta sincronizada para que as fontes/artigos sobrevivam à perda
+    do disco local e sincronizem entre máquinas (o HUB ainda versiona um backup em
+    `.backup/kosmos/`). Sem `sync_root` acessível, cai no caminho local (fallback).
+    """
+    try:
+        import ecosystem_client  # disponível via sys.path configurado acima
+        root = ecosystem_client.get_sync_root()
+        if root is not None:
+            d = Path(root) / "kosmos"
+            d.mkdir(parents=True, exist_ok=True)
+            return d / "kosmos.db"
+    except Exception:
+        pass  # bootstrap antes do logger; sync_root indisponível → fallback local
+    LOCAL_DATA_DIR.mkdir(parents=True, exist_ok=True)
+    return LEGACY_LOCAL_DB
+
+
+DB_PATH:        Path = _resolve_db_path()
 
 
 def _resolve_log_path() -> Path:

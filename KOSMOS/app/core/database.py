@@ -24,9 +24,11 @@ eternamente travados após crash ou kill do processo.
 from __future__ import annotations
 
 import logging
+import shutil
 import sqlite3
+from pathlib import Path
 
-from app.utils.paths import DB_PATH
+from app.utils.paths import DB_PATH, LEGACY_LOCAL_DB
 
 log = logging.getLogger("kosmos.database")
 
@@ -206,6 +208,7 @@ def init_db() -> None:
     reprocesse na próxima execução.
     """
     DB_PATH.parent.mkdir(parents=True, exist_ok=True)
+    _migrate_local_db_to_sync()
     _archive_foreign_db_if_any()
     try:
         conn = sqlite3.connect(str(DB_PATH))
@@ -218,6 +221,12 @@ def init_db() -> None:
             _ensure_columns(conn)
             conn.executescript(_DDL)
             _reset_stale_analyses(conn)
+            # Se o banco de feeds estiver vazio mas houver backup (sources.json no
+            # sync_root), restaura as fontes — a lista nunca se perde de vez.
+            # Só no banco real do sync_root (em testes DB_PATH=tmp → não restaura).
+            if _db_is_in_sync_root():
+                from app.core.sources_backup import restore_sources_if_empty
+                restore_sources_if_empty(conn)
             log.info("Banco inicializado em %s.", DB_PATH)
         finally:
             conn.close()
@@ -265,6 +274,51 @@ _MIGRATION_COLUMNS = {
         ("analysis_schema_version", "INTEGER NOT NULL DEFAULT 0"),
     ],
 }
+
+
+def _db_is_in_sync_root() -> bool:
+    """True se `DB_PATH` é a localização sincronizada real (`{sync_root}/kosmos/kosmos.db`).
+
+    Usado para que migração/restore só ajam no banco de produção — em testes
+    `DB_PATH` aponta para um tmp e estas etapas são puladas.
+    """
+    try:
+        import ecosystem_client
+        root = ecosystem_client.get_sync_root()
+    except Exception:
+        return False
+    return bool(root) and DB_PATH == Path(root) / "kosmos" / "kosmos.db"
+
+
+def _migrate_local_db_to_sync() -> None:
+    """Move um banco local legado para o sync_root (uma vez), se aplicável.
+
+    Só age quando `DB_PATH` é de fato a localização sincronizada
+    (`{sync_root}/kosmos/kosmos.db`) e ainda não há banco lá, mas existe o banco
+    local antigo. A guarda (`DB_PATH == sync_db`) garante que os testes — que
+    apontam `DB_PATH` para um tmp — nunca disparem a migração do banco real.
+    """
+    try:
+        import ecosystem_client
+        root = ecosystem_client.get_sync_root()
+    except Exception:
+        return
+    if not root:
+        return
+    sync_db = Path(root) / "kosmos" / "kosmos.db"
+    if (DB_PATH != sync_db or sync_db.exists()
+            or LEGACY_LOCAL_DB == sync_db or not LEGACY_LOCAL_DB.exists()):
+        return
+    try:
+        sync_db.parent.mkdir(parents=True, exist_ok=True)
+        shutil.move(str(LEGACY_LOCAL_DB), str(sync_db))
+        for suffix in ("-wal", "-shm"):
+            side = LEGACY_LOCAL_DB.with_name(LEGACY_LOCAL_DB.name + suffix)
+            if side.exists():
+                shutil.move(str(side), str(sync_db.with_name(sync_db.name + suffix)))
+        log.info("Banco migrado do local para o sync_root: %s → %s", LEGACY_LOCAL_DB, sync_db)
+    except OSError as exc:
+        log.error("Falha ao migrar banco local para o sync_root: %s", exc)
 
 
 def _archive_foreign_db_if_any() -> None:
