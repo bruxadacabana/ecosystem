@@ -10,10 +10,9 @@ Object names usam o prefixo ``nav*`` para não colidir com o ``#sidebar`` do
 FeedSidebar do v3 (que vive dentro da página de Leitura).
 
 Sinais:
-    nav_requested(view)    — item de navegação clicado (nome da página).
+    nav_requested(view)    — item de navegação clicado (nome da página, inclui "settings").
     add_feed_requested()   — botão "+" clicado.
     refresh_requested()    — botão "↻" clicado.
-    settings_requested()   — item Configurações clicado (abre diálogo, não troca página).
 """
 from __future__ import annotations
 
@@ -70,7 +69,6 @@ class NavRail(QWidget):
     nav_requested = Signal(str)
     add_feed_requested = Signal()
     refresh_requested = Signal()
-    settings_requested = Signal()
 
     def __init__(self, theme: str = "day", parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -174,14 +172,6 @@ class NavRail(QWidget):
     # ------------------------------------------------------------------
 
     def _on_clicked(self, view: str) -> None:
-        if view == "settings":
-            # Configurações abre um diálogo — não muda a página ativa nem o destaque.
-            btn = self._buttons.get("settings")
-            if btn is not None:
-                btn.setChecked(False)
-            log.debug("Nav: Configurações solicitada.")
-            self.settings_requested.emit()
-            return
         self._select(view)
 
     def _select(self, view: str) -> None:

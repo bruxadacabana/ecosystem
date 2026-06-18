@@ -435,3 +435,24 @@ QLabel#dashboardStatName { color: #2c2416; }
 QLabel#dashboardStatCount { color: #8b7355; }
 QFrame#dashboardStatBar { background-color: #8b7355; border: none; }
 QLabel#dashboardStatEmpty { color: #a89878; }
+
+/* ── Configurações (página — design antigo) ───────────────────────────────── */
+QWidget#settingsHeader {
+    background-color: #e8ddc8;
+    border-bottom: 1px solid #c4b49a;
+}
+QLabel#settingsTitle { color: #2c2416; }
+QGroupBox#settingsSection {
+    border: 1px solid #c4b49a;
+    border-radius: 4px;
+    margin-top: 14px;
+    padding: 14px 12px 12px 12px;
+    background-color: #e8ddc8;
+}
+QGroupBox#settingsSection::title {
+    subcontrol-origin: margin;
+    left: 12px;
+    padding: 0 6px;
+    color: #8b7355;
+    font-family: "Special Elite", "Courier New", monospace;
+}

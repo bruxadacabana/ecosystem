@@ -21,16 +21,13 @@ def test_nav_emits_view_on_click(qapp):
     assert rail._buttons["analise"].isChecked()
 
 
-def test_settings_item_emits_settings_not_nav(qapp):
+def test_settings_item_emits_nav(qapp):
     rail = NavRail(theme="day")
     navs: list[str] = []
-    settings: list[int] = []
     rail.nav_requested.connect(navs.append)
-    rail.settings_requested.connect(lambda: settings.append(1))
     rail._buttons["settings"].click()
-    assert settings == [1]
-    assert navs == []                                  # Configurações não troca página
-    assert not rail._buttons["settings"].isChecked()   # nem fica marcado
+    assert navs == ["settings"]                    # Configurações é uma página normal
+    assert rail._buttons["settings"].isChecked()
 
 
 def test_refresh_and_add_buttons_emit(qapp):

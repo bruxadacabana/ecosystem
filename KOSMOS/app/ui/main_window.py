@@ -62,7 +62,7 @@ from app.ui.views.framing_view import FramingView
 from app.ui.views.alerts_view import AlertsView
 from app.ui.views.feed_sidebar import ALL_FEEDS_ID, FeedSidebar
 from app.ui.views.reader_pane import ReaderPane
-from app.ui.views.settings_window import SettingsDialog
+from app.ui.views.settings_view import SettingsView
 from app.ui.views.dashboard_view import DashboardView
 from app.ui.nav_rail import NavRail
 from app.utils.config import KosmosConfig, save_config
@@ -132,19 +132,22 @@ class MainWindow(QMainWindow):
         self._analysis_tab.set_pane("stats", self._stats_view)
 
         # Shell (design antigo): nav rail à esquerda + pilha de páginas.
-        # Páginas: Dashboard (tela inicial), Leitura (splitter 3-painéis) e Análise.
+        # Páginas: Dashboard (tela inicial), Leitura (splitter), Análise, Configurações.
         self._dashboard = DashboardView(theme=self.config.theme)
+        self._settings_view = SettingsView(self.config)
+        self._settings_view.feeds_changed.connect(self._reload_after_settings)
+        self._settings_view.config_saved.connect(self._reload_after_settings)
         self._stack = QStackedWidget()
         self._stack.setObjectName("centralStack")
-        self._stack.addWidget(self._dashboard)     # página "dashboard"
-        self._stack.addWidget(splitter)            # página "leitura"
-        self._stack.addWidget(self._analysis_tab)  # página "analise"
+        self._stack.addWidget(self._dashboard)       # página "dashboard"
+        self._stack.addWidget(splitter)              # página "leitura"
+        self._stack.addWidget(self._analysis_tab)    # página "analise"
+        self._stack.addWidget(self._settings_view)   # página "settings"
 
         self._nav = NavRail(theme=self.config.theme)
         self._nav.nav_requested.connect(self._on_nav)
-        self._nav.settings_requested.connect(self._open_settings)
         self._nav.refresh_requested.connect(self._on_refresh)
-        self._nav.add_feed_requested.connect(self._open_settings)
+        self._nav.add_feed_requested.connect(lambda: self._on_nav("settings"))
 
         central = QWidget()
         row = QHBoxLayout(central)
@@ -229,6 +232,7 @@ class MainWindow(QMainWindow):
 
     def _on_nav(self, view: str) -> None:
         """Troca a página ativa no stack (nav rail do design antigo)."""
+        self._nav.set_active(view)   # sincroniza o destaque (cobre chamadas programáticas)
         if view == "dashboard":
             self._stack.setCurrentWidget(self._dashboard)
             self._dashboard.load()
@@ -237,6 +241,9 @@ class MainWindow(QMainWindow):
         elif view == "analise":
             self._stack.setCurrentWidget(self._analysis_tab)
             self._reload_analysis_views()
+        elif view == "settings":
+            self._stack.setCurrentWidget(self._settings_view)
+            self._settings_view.reload_feeds()
 
     def _reload_analysis_views(self) -> None:
         """Recarrega as ferramentas de análise (cobre o que mudou desde a última visita)."""
@@ -259,13 +266,6 @@ class MainWindow(QMainWindow):
         self._stack.setCurrentWidget(self._splitter)
         self._nav.set_active("leitura")
         self._reader.show_article(article_id)
-
-    def _open_settings(self) -> None:
-        """Abre a janela de Configurações (feeds, aparência, tradução, tópicos)."""
-        dlg = SettingsDialog(self.config, self)
-        dlg.feeds_changed.connect(self._reload_after_settings)
-        dlg.config_saved.connect(self._reload_after_settings)
-        dlg.exec()
 
     def _reload_after_settings(self) -> None:
         """Recarrega sidebar e lista após mudanças nas Configurações (feeds/tema)."""
