@@ -39,6 +39,7 @@ from PySide6.QtWidgets import (
     QInputDialog,
     QMainWindow,
     QMenu,
+    QPushButton,
     QSplitter,
     QStatusBar,
     QTabWidget,
@@ -61,6 +62,7 @@ from app.ui.views.framing_view import FramingView
 from app.ui.views.alerts_view import AlertsView
 from app.ui.views.feed_sidebar import ALL_FEEDS_ID, FeedSidebar
 from app.ui.views.reader_pane import ReaderPane
+from app.ui.views.settings_window import SettingsDialog
 from app.utils.config import KosmosConfig, save_config
 
 log = logging.getLogger("kosmos.main_window")
@@ -131,6 +133,11 @@ class MainWindow(QMainWindow):
         self._reading_tab_index = tabs.addTab(splitter, "Leitura")
         self._analysis_tab_index = tabs.addTab(self._analysis_tab, "Análise")
         tabs.currentChanged.connect(self._on_tab_changed)
+        # Botão de Configurações no canto da barra de abas (feeds, tema, tradução, tópicos).
+        self._settings_btn = QPushButton("⚙ Configurações")
+        self._settings_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._settings_btn.clicked.connect(self._open_settings)
+        tabs.setCornerWidget(self._settings_btn, Qt.Corner.TopRightCorner)
         self.setCentralWidget(tabs)
         self._tabs = tabs
 
@@ -216,6 +223,18 @@ class MainWindow(QMainWindow):
         """Clique num artigo de uma ferramenta de análise → abre na aba de Leitura."""
         self._tabs.setCurrentIndex(self._reading_tab_index)
         self._reader.show_article(article_id)
+
+    def _open_settings(self) -> None:
+        """Abre a janela de Configurações (feeds, aparência, tradução, tópicos)."""
+        dlg = SettingsDialog(self.config, self)
+        dlg.feeds_changed.connect(self._reload_after_settings)
+        dlg.config_saved.connect(self._reload_after_settings)
+        dlg.exec()
+
+    def _reload_after_settings(self) -> None:
+        """Recarrega sidebar e lista após mudanças nas Configurações (feeds/tema)."""
+        self._sidebar.load_feeds()
+        self._article_list.load_articles(ALL_FEEDS_ID)
 
     def _on_add_to_investigation(self, article_id: int) -> None:
         """Menu de escolha de pasta (ou criar nova) para adicionar o artigo."""

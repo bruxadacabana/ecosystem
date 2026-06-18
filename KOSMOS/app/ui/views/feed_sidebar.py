@@ -118,7 +118,7 @@ class FeedSidebar(QWidget):
         _bold(all_item)
 
         if not rows:
-            hint = QTreeWidgetItem(self._tree, ["Adicione feeds em Configurações"])
+            hint = QTreeWidgetItem(self._tree, ["Adicione feeds no botão ⚙ Configurações"])
             hint.setData(0, Qt.ItemDataRole.UserRole, None)
             hint.setDisabled(True)
             return
