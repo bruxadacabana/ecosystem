@@ -62,12 +62,14 @@ fn akasha_db_path() -> Option<PathBuf> {
 
 fn kosmos_db_path() -> Option<PathBuf> {
     let eco = ecosystem::read_json();
-    if let Some(dp) = eco["kosmos"]["data_path"].as_str() {
-        let p = PathBuf::from(dp).join("kosmos.db");
+    // Canônico (KOSMOS v3): {archive_path}/kosmos.db = {sync_root}/kosmos/kosmos.db.
+    if let Some(ap) = eco["kosmos"]["archive_path"].as_str() {
+        let p = PathBuf::from(ap).join("kosmos.db");
         if p.exists() { return Some(p); }
     }
-    if let Some(ap) = eco["kosmos"]["archive_path"].as_str() {
-        let p = PathBuf::from(ap).parent()?.join("kosmos.db");
+    // Fallback: banco local legado (antes da migração para o sync_root).
+    if let Some(dp) = eco["kosmos"]["data_path"].as_str() {
+        let p = PathBuf::from(dp).join("kosmos.db");
         if p.exists() { return Some(p); }
     }
     None
@@ -133,7 +135,7 @@ fn read_akasha_backup(
 /// Lê todos os domínios conhecidos pelo ecossistema:
 /// - AKASHA: tabela `crawl_sites` WHERE deleted=0
 ///   → se DB corrompido: fallback para `.backup/akasha/sites.json`
-/// - KOSMOS:  tabela `feeds`      WHERE active=1
+/// - KOSMOS:  tabela `feeds`      WHERE enabled=1 (schema v3)
 /// Mescla com estado atual de ecosystem.json["sources"].
 /// Falha no AKASHA não interrompe a leitura do KOSMOS.
 #[tauri::command]
@@ -174,20 +176,23 @@ pub fn sources_get_domains() -> Result<SourcesResponse, AppError> {
     if let Some(db) = kosmos_db_path() {
         // Falhas no KOSMOS também são toleradas — não abortam a resposta
         if let Ok(conn) = Connection::open(&db) {
+            // Schema v3 do KOSMOS: feeds(url, title, category, enabled). title pode
+            // ser NULL antes do 1º fetch → COALESCE para a url como rótulo.
             if let Ok(mut stmt) = conn.prepare(
-                "SELECT url, name FROM feeds WHERE active = 1 ORDER BY name ASC"
+                "SELECT url, COALESCE(title, url) FROM feeds WHERE enabled = 1 \
+                 ORDER BY COALESCE(title, url)"
             ) {
                 if let Ok(rows) = stmt.query_map(params![], |row| {
                     Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
                 }) {
-                    rows.filter_map(|r| r.ok()).for_each(|(url, name)| {
+                    rows.filter_map(|r| r.ok()).for_each(|(url, title)| {
                         let host = extract_host(&url);
                         let entry = map.entry(host.clone()).or_insert_with(|| DomainEntry {
                             domain: host.clone(),
                             ..Default::default()
                         });
-                        if entry.label.is_empty() { entry.label = name.clone(); }
-                        entry.kosmos_feeds.push(name);
+                        if entry.label.is_empty() { entry.label = title.clone(); }
+                        entry.kosmos_feeds.push(title);
                     });
                 }
             }

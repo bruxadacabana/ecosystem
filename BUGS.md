@@ -103,7 +103,7 @@ Qual teste cobre o caso agora, ou por que não existe um.
 | [BUG-040](#bug-040) | FIXED | 2026-06-17 | AKASHA (tests/test_searxng_service.py) | `systemctl` chamado em import-time (decorator skipif) → `FileNotFoundError` no Windows aborta a COLEÇÃO do pytest inteira; testes de unit file sem guard de plataforma. `_systemctl` tolera ausência do binário + `pytestmark` pula o módulo sem systemd + `testpaths`/`norecursedirs` excluem o SearXNG vendorizado da coleção |
 | [BUG-041](#bug-041) | FIXED | 2026-06-17 | KOSMOS (app/core/database.py) | banco pré-v3 (schema incompatível) no caminho do DB travava o KOSMOS na inicialização (`no such column: analysis_status`); `_ensure_columns` migrava só 1 coluna e rodava DEPOIS do `executescript`. Fix: migração roda ANTES e cobre todas as colunas novas (introspecção); banco de schema estrangeiro (sem `content_excerpt`) é arquivado em `.pre-v3.bak` e um v3 limpo é criado |
 | [BUG-042](#bug-042) | FIXED | 2026-06-17 | KOSMOS (iniciar.sh) | botão "Iniciar" do KOSMOS no HUB não fazia nada — `iniciar.sh` estava sem o bit de execução (`-rw-r--r--`); o HUB lança via `Command::new(exe_path)` que no Linux executa o arquivo direto (exige `+x`). `chmod +x` (git rastreia o modo) + teste de regressão |
-| [BUG-043](#bug-043) | PARCIAL | 2026-06-17 | KOSMOS (paths.py) + HUB (backup.rs) | banco do KOSMOS gravado LOCAL (`~/.local/share/kosmos`) em vez de `sync_root/kosmos/`, contrariando o design (CLAUDE.md/docstring) → fontes/artigos sem sync nem backup (risco de perda total das fontes). **Lado KOSMOS corrigido:** `paths.py` resolve o DB para `{sync_root}/kosmos/kosmos.db` (fallback local) + migração do banco local + `sources_backup` exporta as fontes para `kosmos/sources.json` e `.backup/kosmos/sources.json` a cada mudança + restore na inicialização se vazio. **Pendente (lado HUB):** `backup.rs::backup_kosmos_feeds` consulta o schema ANTIGO (`name`/`feed_type`/`active`) e a aba Fontes não mostra os feeds — alinhar ao schema v3 |
+| [BUG-043](#bug-043) | FIXED | 2026-06-17 | KOSMOS (paths.py) + HUB (backup.rs, sources.rs) | banco do KOSMOS gravado LOCAL (`~/.local/share/kosmos`) em vez de `sync_root/kosmos/`, contrariando o design → fontes/artigos sem sync nem backup (risco de perda total). **KOSMOS:** DB resolve para `{sync_root}/kosmos/kosmos.db` (fallback local) + migração + `sources_backup` exporta `kosmos/sources.json` e `.backup/kosmos/sources.json` a cada mudança + restore se vazio. **HUB:** `kosmos_db_path` (backup.rs + sources.rs) corrigido (`archive_path.parent()` → `archive_path`) + queries do schema v3 (`title/category/enabled`); a aba Fontes já renderiza os feeds (`DomainEntry.kosmos_feeds`). Exige rebuild do HUB |
 
 ---
 
@@ -2312,7 +2312,7 @@ Bloqueio total do lançamento do KOSMOS pelo HUB no Linux.
 
 ---
 
-### BUG-043 · [PARCIAL] · Banco do KOSMOS (e a lista de fontes) não estava no sync_root nem tinha backup
+### BUG-043 · [FIXED] · Banco do KOSMOS (e a lista de fontes) não estava no sync_root nem tinha backup
 
 #### Identificação
 - **Data:** 2026-06-17
@@ -2345,9 +2345,10 @@ Risco de **perda total das fontes** da usuária (sem sync nem backup efetivo) e 
 - `feeds_admin.py`: cada add/remove/update/import reexporta o `sources.json` (só em produção; testes passam `conn`).
 - Validado em runtime: banco migrado para `ecosystem_root/kosmos/kosmos.db`; KOSMOS inicia.
 
-#### Pendente (lado HUB — A FAZER)
-- `backup.rs::backup_kosmos_feeds` e o restore: atualizar a query para o schema v3 (`url, title, category, enabled`).
-- Aba **Fontes** do HUB (`FontesView.tsx`): exibir os feeds do KOSMOS lidos do `sources.json` (ou via comando que lê o banco sincronizado). Exige rebuild do HUB.
+#### Fix aplicado (lado HUB — FEITO)
+- `kosmos_db_path` (em `backup.rs` E `sources.rs`): corrigido de `archive_path.parent()/kosmos.db` (caminho errado) para `{archive_path}/kosmos.db` = `{sync_root}/kosmos/kosmos.db`, com fallback `data_path/kosmos.db` (legado).
+- `backup.rs::backup_kosmos_feeds` e `sources.rs::sources_get_domains`: queries atualizadas para o schema v3 (`url, COALESCE(title,…), category, enabled` / `WHERE enabled=1`).
+- A aba **Fontes** (`FontesView.tsx`) já mescla e renderiza `DomainEntry.kosmos_feeds` ("KOSMOS ×N") — só estava lendo errado; nenhuma mudança no React foi necessária. Exige rebuild do HUB para a usuária ver.
 
 #### Teste de regressão
 `KOSMOS/tests/test_sources_backup.py` (5) — export grava as duas cópias no formato v3, restore importa quando vazio, não restaura por cima, cai para o `.backup`, sem sync_root é no-op. `test_feeds_admin.py` (10) — CRUD + OPML. Isolamento: migração/restore só agem quando `DB_PATH` é o banco real do sync_root. Suíte KOSMOS: passa.

@@ -66,12 +66,15 @@ fn akasha_userdata_path(eco: &Value) -> Option<PathBuf> {
 }
 
 fn kosmos_db_path(eco: &Value) -> Option<PathBuf> {
-    if let Some(dp) = eco["kosmos"]["data_path"].as_str() {
-        let p = PathBuf::from(dp).join("kosmos.db");
+    // Canônico: o KOSMOS v3 guarda o banco em {archive_path}/kosmos.db
+    // (= {sync_root}/kosmos/kosmos.db), sincronizado via Syncthing.
+    if let Some(ap) = eco["kosmos"]["archive_path"].as_str() {
+        let p = PathBuf::from(ap).join("kosmos.db");
         if p.exists() { return Some(p); }
     }
-    if let Some(ap) = eco["kosmos"]["archive_path"].as_str() {
-        let p = PathBuf::from(ap).parent()?.join("kosmos.db");
+    // Fallback: data_path/kosmos.db (banco local legado, antes da migração).
+    if let Some(dp) = eco["kosmos"]["data_path"].as_str() {
+        let p = PathBuf::from(dp).join("kosmos.db");
         if p.exists() { return Some(p); }
     }
     None
@@ -187,16 +190,18 @@ fn backup_kosmos_feeds(eco: &Value, bdir: &Path) -> Result<String, String> {
         rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY | rusqlite::OpenFlags::SQLITE_OPEN_NO_MUTEX,
     ).map_err(|e| e.to_string())?;
 
+    // Schema v3 do KOSMOS: feeds(url, title, category, enabled). title pode ser NULL.
     let mut stmt = conn.prepare(
-        "SELECT url, name, feed_type, active FROM feeds ORDER BY name ASC"
+        "SELECT url, COALESCE(title, ''), COALESCE(category, 'Sem categoria'), enabled \
+         FROM feeds ORDER BY category, COALESCE(title, url)"
     ).map_err(|e| e.to_string())?;
 
     let feeds: Vec<Value> = stmt.query_map(params![], |row| {
         Ok(json!({
-            "url":       row.get::<_, String>(0)?,
-            "name":      row.get::<_, String>(1)?,
-            "feed_type": row.get::<_, String>(2)?,
-            "active":    row.get::<_, bool>(3)?,
+            "url":      row.get::<_, String>(0)?,
+            "title":    row.get::<_, String>(1)?,
+            "category": row.get::<_, String>(2)?,
+            "enabled":  row.get::<_, bool>(3)?,
         }))
     }).map_err(|e| e.to_string())?
     .filter_map(|r| r.ok())
@@ -841,16 +846,17 @@ mod tests {
     fn make_fake_kosmos_db(dir: &Path) -> PathBuf {
         let db_path = dir.join("kosmos.db");
         let conn = Connection::open(&db_path).unwrap();
+        // Schema v3 do KOSMOS: feeds(url, title, category, enabled).
         conn.execute_batch(
             "CREATE TABLE feeds (
-                id        INTEGER PRIMARY KEY AUTOINCREMENT,
-                url       TEXT NOT NULL UNIQUE,
-                name      TEXT NOT NULL DEFAULT '',
-                feed_type TEXT NOT NULL DEFAULT 'rss',
-                active    INTEGER NOT NULL DEFAULT 1
+                id       INTEGER PRIMARY KEY AUTOINCREMENT,
+                url      TEXT NOT NULL UNIQUE,
+                title    TEXT,
+                category TEXT NOT NULL DEFAULT 'Sem categoria',
+                enabled  INTEGER NOT NULL DEFAULT 1
              );
-             INSERT INTO feeds (url, name, feed_type, active)
-             VALUES ('https://feed.example.com/rss', 'Example Feed', 'rss', 1);",
+             INSERT INTO feeds (url, title, category, enabled)
+             VALUES ('https://feed.example.com/rss', 'Example Feed', 'Geral', 1);",
         ).unwrap();
         db_path
     }
@@ -907,6 +913,8 @@ mod tests {
         let feeds: Vec<Value> = serde_json::from_str(&content).unwrap();
         assert_eq!(feeds.len(), 1);
         assert_eq!(feeds[0]["url"], "https://feed.example.com/rss");
+        assert_eq!(feeds[0]["title"], "Example Feed");      // schema v3
+        assert_eq!(feeds[0]["category"], "Geral");
     }
 
     // ─── atomic_write ────────────────────────────────────────────────────────
