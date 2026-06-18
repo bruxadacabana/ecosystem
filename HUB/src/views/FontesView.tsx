@@ -39,17 +39,10 @@ export function FontesView() {
     setError(null)
     const res = await cmd.sourcesSetFlag(domain, flag, !current)
     if (res.ok) {
-      if (flag === 'feed') {
-        // Ligar/desligar o feed do KOSMOS descobre/remove a fonte de verdade —
-        // recarrega para refletir o feed encontrado (ou removido) por domínio.
-        await load()
-      } else {
-        setDomains(prev =>
-          prev.map(d =>
-            d.domain === domain ? { ...d, [flag]: !current } : d,
-          ),
-        )
-      }
+      // Ambos os toggles fazem ação real (feed → KOSMOS; library → crawl_sites da
+      // AKASHA) — recarrega para refletir o estado real (feed descoberto/removido,
+      // library, akasha_url).
+      await load()
     } else {
       // Ex.: nenhum feed RSS encontrado no domínio.
       setError(res.error.message)

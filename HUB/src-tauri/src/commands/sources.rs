@@ -241,13 +241,20 @@ pub async fn sources_set_flag(domain: String, flag: String, enabled: bool) -> Re
         ));
     }
 
-    // Ação real do toggle do KOSMOS — feita ANTES de gravar o flag de UI, para que
-    // a flag só fique ligada se a fonte foi de fato adicionada.
+    // Ação real do toggle — feita ANTES de gravar o flag de UI, para que a flag só
+    // fique ligada se a fonte foi de fato adicionada/reativada.
     if flag == "feed" {
         if enabled {
             add_kosmos_feed_for_domain(&domain).await?;
         } else {
             remove_kosmos_feeds_for_domain(&domain)?;
+        }
+    } else {
+        // library (Biblioteca da AKASHA)
+        if enabled {
+            add_akasha_library_for_domain(&domain)?;
+        } else {
+            remove_akasha_library_for_domain(&domain)?;
         }
     }
 
@@ -304,6 +311,64 @@ fn remove_kosmos_feeds_for_domain(domain: &str) -> Result<(), AppError> {
     };
     for id in ids {
         let _ = conn.execute("DELETE FROM feeds WHERE id = ?1", params![id]);
+    }
+    Ok(())
+}
+
+/// Adiciona/reativa um domínio na Biblioteca da AKASHA (`crawl_sites`, deleted=0).
+fn add_akasha_library_for_domain(domain: &str) -> Result<(), AppError> {
+    let db = akasha_db_path()
+        .ok_or_else(|| AppError::MissingConfig("akasha.db não encontrado".into()))?;
+    let conn = Connection::open(&db).map_err(|e| AppError::Io(e.to_string()))?;
+    let _ = conn.busy_timeout(std::time::Duration::from_secs(5));
+    // Já existe um site (talvez deletado) para este host? Reativa; senão insere.
+    let existing: Option<i64> = {
+        let mut stmt = conn.prepare("SELECT id, base_url FROM crawl_sites").map_err(|e| AppError::Io(e.to_string()))?;
+        let rows = stmt
+            .query_map(params![], |r| Ok((r.get::<_, i64>(0)?, r.get::<_, String>(1)?)))
+            .map_err(|e| AppError::Io(e.to_string()))?;
+        // vincula a um local para o iterador temporário soltar o borrow de `stmt`
+        // antes do fim do bloco (E0597).
+        let found = rows
+            .filter_map(|r| r.ok())
+            .find(|(_, u)| extract_host(u) == domain)
+            .map(|(id, _)| id);
+        found
+    };
+    if let Some(id) = existing {
+        conn.execute("UPDATE crawl_sites SET deleted = 0 WHERE id = ?1", params![id])
+            .map_err(|e| AppError::Io(e.to_string()))?;
+    } else {
+        let base_url = format!("https://{domain}/");
+        conn.execute(
+            "INSERT OR IGNORE INTO crawl_sites (base_url, label) VALUES (?1, ?2)",
+            params![base_url, domain],
+        )
+        .map_err(|e| AppError::Io(e.to_string()))?;
+    }
+    Ok(())
+}
+
+/// Remove (soft-delete, deleted=1) da Biblioteca da AKASHA os sites cujo host == domínio.
+fn remove_akasha_library_for_domain(domain: &str) -> Result<(), AppError> {
+    let db = match akasha_db_path() {
+        Some(p) => p,
+        None => return Ok(()),
+    };
+    let conn = Connection::open(&db).map_err(|e| AppError::Io(e.to_string()))?;
+    let _ = conn.busy_timeout(std::time::Duration::from_secs(5));
+    let ids: Vec<i64> = {
+        let mut stmt = conn.prepare("SELECT id, base_url FROM crawl_sites").map_err(|e| AppError::Io(e.to_string()))?;
+        let rows = stmt
+            .query_map(params![], |r| Ok((r.get::<_, i64>(0)?, r.get::<_, String>(1)?)))
+            .map_err(|e| AppError::Io(e.to_string()))?;
+        rows.filter_map(|r| r.ok())
+            .filter(|(_, u)| extract_host(u) == domain)
+            .map(|(id, _)| id)
+            .collect()
+    };
+    for id in ids {
+        let _ = conn.execute("UPDATE crawl_sites SET deleted = 1 WHERE id = ?1", params![id]);
     }
     Ok(())
 }
@@ -497,5 +562,29 @@ mod tests {
         for id in ids { conn.execute("DELETE FROM feeds WHERE id=?1", params![id]).unwrap(); }
         let remaining: String = conn.query_row("SELECT url FROM feeds", params![], |r| r.get(0)).unwrap();
         assert_eq!(remaining, "https://b.com/rss");
+    }
+
+    #[test]
+    fn test_akasha_library_soft_delete_by_host() {
+        let tmp = tempfile::tempdir().unwrap();
+        let db = tmp.path().join("akasha.db");
+        let conn = Connection::open(&db).unwrap();
+        conn.execute_batch(
+            "CREATE TABLE crawl_sites (id INTEGER PRIMARY KEY AUTOINCREMENT, base_url TEXT NOT NULL UNIQUE,
+                label TEXT NOT NULL DEFAULT '', crawl_depth INTEGER NOT NULL DEFAULT 2,
+                crawl_interval_days INTEGER NOT NULL DEFAULT 7, deleted INTEGER NOT NULL DEFAULT 0);
+             INSERT INTO crawl_sites (base_url) VALUES ('https://a.com/'), ('https://b.com/');",
+        ).unwrap();
+        // soft-delete (deleted=1) os sites de host a.com — espelha remove_akasha_library_for_domain
+        let ids: Vec<i64> = {
+            let mut stmt = conn.prepare("SELECT id, base_url FROM crawl_sites").unwrap();
+            let rows = stmt.query_map(params![], |r| Ok((r.get::<_, i64>(0)?, r.get::<_, String>(1)?))).unwrap();
+            rows.filter_map(|r| r.ok()).filter(|(_, u)| extract_host(u) == "a.com").map(|(i, _)| i).collect()
+        };
+        for id in &ids { conn.execute("UPDATE crawl_sites SET deleted=1 WHERE id=?1", params![id]).unwrap(); }
+        let active: i64 = conn.query_row("SELECT COUNT(*) FROM crawl_sites WHERE deleted=0", params![], |r| r.get(0)).unwrap();
+        assert_eq!(active, 1, "só b.com deve continuar ativo");
+        let url: String = conn.query_row("SELECT base_url FROM crawl_sites WHERE deleted=0", params![], |r| r.get(0)).unwrap();
+        assert_eq!(url, "https://b.com/");
     }
 }
