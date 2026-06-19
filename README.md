@@ -105,6 +105,7 @@ O HUB está sempre aberto — é o centro do ecossistema. Nenhum outro app é in
 **Painel de controle:**
 - Lança, monitora e encerra todos os outros apps do ecossistema
 - Gerencia o `ecosystem.json` — fonte de verdade para caminhos, modelos e configurações
+- Aba **Config**: "Caminhos & apps" (paths/executáveis) + "Todas as configs" — editor genérico que expõe **toda** a config do `ecosystem.json` (o arquivo é por-máquina, não sincronizado), escondendo estado de runtime
 - Painel Syncthing: visualiza estado da sincronização entre máquinas
 - Painel "Reflexões": lê a vida interior das IAs — reflexões, insights e conexões da Akasha e da Mnemosyne (lidas da `personal_memory` de cada uma), em seções separadas, somente leitura
 - Monitor de VRAM / GPU em tempo real

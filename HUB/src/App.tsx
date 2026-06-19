@@ -15,7 +15,7 @@ import { SyncSetupView } from './views/SyncSetupView'
 import { DashboardView } from './views/DashboardView'
 import { LogosView } from './views/LogosView'
 import { AtividadeView } from './views/AtividadeView'
-import { SetupView } from './views/SetupView'
+import { ConfigSection } from './views/ConfigSection'
 import { WritingView } from './views/WritingView'
 import { BookView } from './views/BookView'
 import { ChapterView } from './views/ChapterView'
@@ -364,7 +364,7 @@ export default function App() {
         return <SearchView />
       case 'config':
         return (
-          <SetupView
+          <ConfigSection
             onBack={() => handleSection('home')}
             onSaved={() => {
               toast.success('Configuração salva.')
