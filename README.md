@@ -226,12 +226,13 @@ Leitor e analisador de feeds RSS/Atom para jornalistas, estudantes e ativistas.
 **Funcionalidades implementadas (v3):**
 - Aggregador RSS/Atom com layout 3-painéis (sidebar de feeds, lista de cards, painel de leitura)
 - Busca e parse de feeds com throttle por domínio (2s mínimo entre requisições)
+- Descoberta de feeds (`feed_discovery.py`): dado o URL de um site, encontra os feeds RSS/Atom anunciados nas tags `<link>` da página, com validação ao adicionar
 - Extração de texto completo de artigos via `article_scraper.py`: trafilatura como método principal, fallback BeautifulSoup quando o resultado é insuficiente
 - Detecção de idioma, tipo de artigo (notícia/opinião/análise) e tempo estimado de leitura
 - Banco SQLite sincronizado via Syncthing (`sync_root/kosmos/`) com FTS5 e triggers automáticos
 - Rastreamento de leitura (is_read, read_at)
 - Análise AI via LOGOS em duas etapas (`logos_client.py` + `AnalysisWorker`): pré-análise rápida em background **P3** (tags, sentimento, clickbait, idioma, resumo) com os **cards atualizando ao vivo** (borda colorida por sentimento, ícone de alerta de clickbait, chips de tags); e análise rica em **P1** ao abrir o artigo (cinco Ws, entidades, viés político) exibida numa seção "Análise" no leitor, preenchida progressivamente. Saída por prompt-e-parseia (JSON tolerante), claim atômico entre máquinas, schema versioning e TTL de 6 meses para 5W/entidades
-- Arquivamento de artigos como `.md` em `sync_root/kosmos/Web/` (`archiver.py`): frontmatter completo, seção de análise marcada `kosmos_analysis: true` (Mnemosyne trata com peso distinto), referência ABNT e dual-language quando traduzido
+- Arquivamento de artigos como `.md` em `sync_root/kosmos/Web/` (`archiver.py`): frontmatter completo, seção de análise marcada `kosmos_analysis: true` (Mnemosyne trata com peso distinto), referência ABNT e dual-language quando traduzido. Botão **Arquivar** no leitor marca `is_saved=1`; a visão **Salvos** lista os artigos arquivados
 - Tradução (`translator.py`): argostranslate offline (padrão) ou LOGOS; títulos dos cards traduzidos em background **P3**; tradução de artigo sob demanda **P2** com alternância original/tradução; temas da análise alimentam o `shared_topic_profile` (`interests.py`)
 - Ferramentas de investigação (aba Análise): rastreamento de entidades, pastas de investigação com dossiê `.md`, mapa de cobertura (entidade × feed × dia), comparação de enquadramento (por espectro político) e **alertas** de palavras-chave/entidades — cards são destacados (🔔) na próxima abertura da lista quando casam com um termo vigiado
 - Anotações e **highlights** no leitor: seleção de trecho → menu de contexto marca como citação/questionamento/dado verificável/contradição, com **coloração inline** por tipo e nota por destaque; exportáveis como `.md` (de uma investigação ou de um feed, agrupados por tipo)
