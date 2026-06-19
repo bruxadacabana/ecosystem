@@ -591,3 +591,29 @@ QPushButton#sourceDeleteBtn { color: #B5793F; }
 /* ── Descobrir feeds (diálogo) ────────────────────────────────────────────── */
 QWidget#discoveryCard { border-bottom: 1px solid #181D28; }
 QLabel#discoveryTitle { color: #E8DFC8; }
+
+/* ── Ferramentas de Análise — re-skin (V1) ────────────────────────────────── */
+QListWidget#analysis_rail {
+    background-color: #181D28;
+    border-right: 1px solid #2E3445;
+    font-family: "Special Elite", "Courier New", monospace;
+    font-size: 12px;
+    outline: none;
+}
+QLabel#analysis_placeholder, QLabel#framing_empty,
+QLabel#coverage_info, QLabel#framing_info {
+    color: #7A6E58;
+    font-size: 13px;
+}
+QLabel#entity_header, QLabel#investigation_header, QLabel#framing_col_header {
+    color: #D4A820;
+    font-family: "Special Elite", "Courier New", monospace;
+    font-size: 15px;
+    letter-spacing: 0.04em;
+}
+QLabel#entity_sentiment, QLabel#entity_feeds,
+QLabel#coverage_entity, QLabel#framing_entity, QLabel#investigation_desc {
+    color: #B8A882;
+    font-size: 12px;
+}
+QLabel#stats_bias_label { color: #E8D9BE; font-weight: bold; padding: 4px 0; }

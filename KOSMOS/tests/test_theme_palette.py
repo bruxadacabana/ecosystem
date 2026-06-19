@@ -33,6 +33,15 @@ def test_reader_night_matches_app_night_base():
     assert "#12161e" in reader, "o corpo do leitor (noite) deve usar a mesma base azul do chrome"
 
 
+def test_analysis_tools_styled_in_both_themes():
+    # Re-skin V1: as ferramentas de Análise devem estar estilizadas nos DOIS temas
+    # (o day.qss não tinha nenhum estilo de análise antes do V1).
+    for name in ("night.qss", "day.qss"):
+        css = (THEMES_DIR / name).read_text(encoding="utf-8").lower()
+        assert "#analysis_rail" in css, f"{name} deve estilizar o rail de Análise"
+        assert "#entity_header" in css, f"{name} deve estilizar os cabeçalhos de Análise"
+
+
 def test_cosmos_painter_night_is_blue(qapp):
     from collections import Counter
 
