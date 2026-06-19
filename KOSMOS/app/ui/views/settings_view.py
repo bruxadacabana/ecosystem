@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import logging
 
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import Qt, QThread, Signal
 from PySide6.QtGui import QFont
 from PySide6.QtWidgets import (
     QApplication,
@@ -36,15 +36,31 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from app.core.feed_discovery import validate_feed
 from app.core.feeds_admin import add_feed, delete_feed, import_opml, list_feeds
 from app.core.interests import apply_manual_topics
 from app.theme.theme_manager import apply_theme
+from app.ui.dialogs.discover_feeds_dialog import DiscoverFeedsDialog
 from app.utils.config import KosmosConfig, save_config
 
 log = logging.getLogger("kosmos.settings_view")
 
 _THEMES = [("day", "Dia (claro)"), ("night", "Noite (escuro)")]
 _BACKENDS = [("argos", "Argos (offline)"), ("logos", "LOGOS (online)")]
+
+
+class _ValidateAddWorker(QThread):
+    """Valida um feed (rede) em background antes de adicionar."""
+
+    done = Signal(bool, str)   # ok, título_ou_erro
+
+    def __init__(self, url: str) -> None:
+        super().__init__()
+        self._url = url
+
+    def run(self) -> None:
+        ok, msg = validate_feed(self._url)
+        self.done.emit(ok, msg)
 
 
 class SettingsView(QWidget):
@@ -165,6 +181,10 @@ class SettingsView(QWidget):
         lay.addWidget(self._feed_list, 1)
 
         actions = QHBoxLayout()
+        discover_btn = QPushButton("Descobrir feeds de um site…")
+        discover_btn.setObjectName("settingsDiscoverBtn")
+        discover_btn.clicked.connect(self._open_discover)
+        actions.addWidget(discover_btn)
         opml_btn = QPushButton("Importar OPML…")
         opml_btn.clicked.connect(self._on_import_opml)
         actions.addWidget(opml_btn)
@@ -194,16 +214,40 @@ class SettingsView(QWidget):
         self._feeds_status.setText(f"{len(feeds)} fonte(s).")
 
     def _on_add_feed(self) -> None:
+        """Valida o endereço (rede, em background) antes de gravar."""
         url = self._url_edit.text().strip()
         if not url:
             return
-        fid = add_feed(url, "", self._cat_edit.text().strip() or "Sem categoria")
+        self._feeds_status.setText("Validando o endereço…")
+        self._validate_worker = _ValidateAddWorker(url)
+        self._validate_worker.done.connect(lambda ok, msg: self._finish_add(url, ok, msg))
+        self._validate_worker.start()
+
+    def _finish_add(self, url: str, ok: bool, title_or_error: str) -> None:
+        """Conclui a adição após a validação: grava se for um feed válido, avisa se não."""
+        if not ok:
+            self._feeds_status.setText(f"Não adicionado — {title_or_error}")
+            log.info("Feed recusado na validação: %s (%s)", url, title_or_error)
+            return
+        cat = self._cat_edit.text().strip() or "Sem categoria"
+        fid = add_feed(url, title_or_error, cat)
         if fid is not None:
             self._url_edit.clear()
             self._cat_edit.clear()
             self.reload_feeds()
             self.feeds_changed.emit()
+            self._feeds_status.setText(f"Adicionado: {title_or_error}")
             log.info("Feed adicionado pelas Configurações: %s", url)
+
+    def _open_discover(self) -> None:
+        """Abre o diálogo 'Descobrir feeds de um site'; recarrega ao adicionar."""
+        dlg = DiscoverFeedsDialog(self)
+        dlg.feeds_changed.connect(self._on_discovered_added)
+        dlg.exec()
+
+    def _on_discovered_added(self) -> None:
+        self.reload_feeds()
+        self.feeds_changed.emit()
 
     def _on_remove_feed(self) -> None:
         item = self._feed_list.currentItem()

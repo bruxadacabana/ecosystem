@@ -587,3 +587,7 @@ QLabel#sourceName { color: #E8D9BE; }
 QLabel#sourceName[paused="true"] { color: #7A6E58; }
 QLabel#sourceMeta { color: #7A6E58; font-size: 11px; }
 QPushButton#sourceDeleteBtn { color: #B5793F; }
+
+/* ── Descobrir feeds (diálogo) ────────────────────────────────────────────── */
+QWidget#discoveryCard { border-bottom: 1px solid #181D28; }
+QLabel#discoveryTitle { color: #E8DFC8; }

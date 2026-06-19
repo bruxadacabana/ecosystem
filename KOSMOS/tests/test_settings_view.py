@@ -41,7 +41,7 @@ def test_reload_feeds_populates(qapp):
     assert "Feed A" in v._feed_list.item(0).text() and "Geral" in v._feed_list.item(0).text()
 
 
-def test_add_feed_calls_and_emits(qapp):
+def test_finish_add_valid_calls_and_emits(qapp):
     v = _view(qapp)
     got = []
     v.feeds_changed.connect(lambda: got.append(1))
@@ -49,17 +49,29 @@ def test_add_feed_calls_and_emits(qapp):
     v._cat_edit.setText("Tech")
     with patch("app.ui.views.settings_view.add_feed", return_value=5) as madd, \
          patch("app.ui.views.settings_view.list_feeds", return_value=[]):
-        v._on_add_feed()
-    madd.assert_called_once_with("http://new.com/rss", "", "Tech")
+        # após validação ok, grava com o título validado
+        v._finish_add("http://new.com/rss", True, "Novo Feed")
+    madd.assert_called_once_with("http://new.com/rss", "Novo Feed", "Tech")
     assert got == [1]
     assert v._url_edit.text() == ""        # campos limpos
 
 
-def test_add_feed_ignores_empty_url(qapp):
+def test_finish_add_invalid_does_not_add(qapp):
     v = _view(qapp)
     with patch("app.ui.views.settings_view.add_feed") as madd:
-        v._on_add_feed()                    # url vazia
+        v._finish_add("http://x", False, "Não parece um feed válido.")
     madd.assert_not_called()
+    assert "Não adicionado" in v._feeds_status.text()
+
+
+def test_add_feed_ignores_empty_url(qapp):
+    v = _view(qapp)
+    # url vazia → nem inicia validação nem grava
+    with patch("app.ui.views.settings_view.add_feed") as madd, \
+         patch("app.ui.views.settings_view._ValidateAddWorker") as mworker:
+        v._on_add_feed()
+    madd.assert_not_called()
+    mworker.assert_not_called()
 
 
 def test_remove_feed_calls(qapp):
