@@ -5,12 +5,20 @@ Não se esqueça das regras para documentar no README e GUIDE. Não se esqueça 
 
 ---
 
-#### Redesign — trazer o design antigo (pré-v3) sobre as features do v3 | 2026-06-17
+volta 11h40
 
-Seguindo a ordem — o próximo item de implementação é o R1 — Leitor (a peça central: portar o design do leitor antigo de 2082 linhas, mantendo análise/highlights/tradução do v3). Como é o maior e mais importante item, vou ler os dois leitores pra te propor o caminho com precisão antes de escrever — igual fiz na fundação. Lendo o reader do v3 (features que preciso manter) e mapeando o antigo.
+❯ tailscale status
+100.125.205.75  thewitch     bruxadacabana@  linux    -
+100.93.245.2    gallant-adm  bruxadacabana@  windows  -
+100.79.50.76    t410         bruxadacabana@  linux    -
 
-Escolha registrada: QWebEngine + highlights via JS (mais fiel) — o leitor bonito de volta, com todas as features do v3 e os highlights reimplementados via ponte JS no webview.
+~
 
+ecosystem.json
+    "web_pages": 10,
+    "web_search_backend": "http://192.168.0.252:8080/",
+    "web_search_backend_fallback": "http://100.79.50.76:8080/"
+  },
 ---
 
 key = 11c345dcaebdada6070a5545e7245f5ac91fa265d24324b8b57a5d6ae11c8609
