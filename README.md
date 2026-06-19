@@ -106,6 +106,7 @@ O HUB está sempre aberto — é o centro do ecossistema. Nenhum outro app é in
 - Lança, monitora e encerra todos os outros apps do ecossistema
 - Gerencia o `ecosystem.json` — fonte de verdade para caminhos, modelos e configurações
 - Painel Syncthing: visualiza estado da sincronização entre máquinas
+- Painel "Reflexões": lê a vida interior das IAs — reflexões, insights e conexões da Akasha e da Mnemosyne (lidas da `personal_memory` de cada uma), em seções separadas, somente leitura
 - Monitor de VRAM / GPU em tempo real
 - Gerenciador de perfis LLM: define qual modelo usar para chat, RAG, análise e embedding
 - Chat direto com LLM (via LOGOS, P1)

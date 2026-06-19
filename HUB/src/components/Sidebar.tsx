@@ -10,6 +10,7 @@ const SECTIONS: { id: HubSection; symbol: string; label: string }[] = [
   { id: 'logos',         symbol: 'Λ', label: 'LOGOS'     },
   { id: 'atividade',     symbol: '≋', label: 'Feed'      },
   { id: 'monitoramento', symbol: '⬡', label: 'Monitor'   },
+  { id: 'reflexoes',     symbol: '✦', label: 'Reflexões' },
   { id: 'fontes',        symbol: '⊕', label: 'Fontes'    },
   { id: 'interesses',    symbol: '◈', label: 'Interesses' },
   { id: 'comunicacoes',  symbol: '◉', label: 'Comms'      },

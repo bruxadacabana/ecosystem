@@ -402,7 +402,7 @@ export interface FinetuneState {
 
 export type HubView = 'home' | 'writing' | 'reading' | 'projects'
 
-export type HubSection = 'home' | 'logos' | 'atividade' | 'monitoramento' | 'git' | 'sync' | 'busca' | 'fontes' | 'interesses' | 'comunicacoes' | 'config'
+export type HubSection = 'home' | 'logos' | 'atividade' | 'monitoramento' | 'reflexoes' | 'git' | 'sync' | 'busca' | 'fontes' | 'interesses' | 'comunicacoes' | 'config'
 
 export interface SearxngStatus {
   active:    boolean

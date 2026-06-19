@@ -24,6 +24,7 @@ import { ArticleView } from './views/ArticleView'
 import { ProjectsView } from './views/ProjectsView'
 import { PageView } from './views/PageView'
 import { MonitoramentoView } from './views/MonitoramentoView'
+import { ReflexoesView } from './views/ReflexoesView'
 import { GitView } from './views/GitView'
 import { SyncView } from './views/SyncView'
 import { SearchView } from './views/SearchView'
@@ -347,6 +348,8 @@ export default function App() {
         return <AtividadeView />
       case 'monitoramento':
         return <MonitoramentoView />
+      case 'reflexoes':
+        return <ReflexoesView />
       case 'fontes':
         return <FontesView />
       case 'interesses':
