@@ -461,3 +461,13 @@ QGroupBox#settingsSection::title {
 QWidget#savedHeader { background-color: #e8ddc8; border-bottom: 1px solid #c4b49a; }
 QLabel#savedTitle { color: #2c2416; }
 QFrame#savedSep { background-color: #c4b49a; max-height: 1px; }
+
+/* ── Fontes (gestão de feeds — design antigo) ─────────────────────────────── */
+QWidget#sourcesHeader { background-color: #e8ddc8; border-bottom: 1px solid #c4b49a; }
+QLabel#sourcesTitle { color: #2c2416; }
+QFrame#sourcesSep { background-color: #c4b49a; max-height: 1px; }
+QWidget#sourceRow { border-bottom: 1px solid #d8cbb0; }
+QLabel#sourceName { color: #2c2416; }
+QLabel#sourceName[paused="true"] { color: #8b7355; }
+QLabel#sourceMeta { color: #8b7355; font-size: 11px; }
+QPushButton#sourceDeleteBtn { color: #a85a2a; }

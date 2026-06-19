@@ -65,6 +65,7 @@ from app.ui.views.reader_pane import ReaderPane
 from app.ui.views.settings_view import SettingsView
 from app.ui.views.dashboard_view import DashboardView
 from app.ui.views.saved_view import SavedView
+from app.ui.views.sources_view import SourcesView
 from app.ui.nav_rail import NavRail
 from app.utils.config import KosmosConfig, save_config
 
@@ -140,6 +141,8 @@ class MainWindow(QMainWindow):
         self._settings_view.config_saved.connect(self._reload_after_settings)
         self._saved_view = SavedView()
         self._saved_view.article_selected.connect(self._open_article_from_saved)
+        self._sources_view = SourcesView()
+        self._sources_view.feeds_changed.connect(self._reload_after_settings)
         self._stack = QStackedWidget()
         self._stack.setObjectName("centralStack")
         self._stack.addWidget(self._dashboard)       # página "dashboard"
@@ -147,6 +150,7 @@ class MainWindow(QMainWindow):
         self._stack.addWidget(self._analysis_tab)    # página "analise"
         self._stack.addWidget(self._settings_view)   # página "settings"
         self._stack.addWidget(self._saved_view)      # página "salvos"
+        self._stack.addWidget(self._sources_view)    # página "fontes"
 
         self._nav = NavRail(theme=self.config.theme)
         self._nav.nav_requested.connect(self._on_nav)
@@ -253,6 +257,9 @@ class MainWindow(QMainWindow):
         elif view == "salvos":
             self._stack.setCurrentWidget(self._saved_view)
             self._saved_view.load()
+        elif view == "fontes":
+            self._stack.setCurrentWidget(self._sources_view)
+            self._sources_view.load()
 
     def _reload_analysis_views(self) -> None:
         """Recarrega as ferramentas de análise (cobre o que mudou desde a última visita)."""
