@@ -23,6 +23,9 @@ pub enum AppError {
 
     #[error("Configuração ausente: {0}")]
     MissingConfig(String),
+
+    #[error("Erro: {0}")]
+    Other(String),
 }
 
 impl From<std::io::Error> for AppError {

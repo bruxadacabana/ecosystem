@@ -261,6 +261,24 @@ O diretório `sync_root` é sincronizado entre as máquinas via Syncthing. Os da
 
 **Regra fundamental:** nenhum app escreve no `ecosystem.json` além do HUB. Apps apenas leem.
 
+> **Exceção pontual:** a página de **Settings da AKASHA** escreve a própria seção `akasha` (campos de busca). Para evitar exigir cada app aberto só para configurar, o HUB cobre **toda** a config (ver abaixo).
+
+**O `ecosystem.json` é por-máquina e NÃO é sincronizado.** Ele fica em `%APPDATA%\ecosystem\` (Windows) / `~/.local/share/ecosystem/` (Linux) — **fora** do `sync_root`. Só os **dados** dentro do `sync_root` são sincronizados pelo Syncthing; a config (caminhos absolutos, portas, modelos) difere por máquina de propósito. Há ainda um `ecosystem.local.json` opcional para overrides absolutos por máquina (mesclado por cima).
+
+### Editor de configuração no HUB (todas as chaves)
+
+Como o `ecosystem.json` é por-máquina, cada máquina precisa configurá-lo, e o HUB (sempre aberto) é o ponto central. Na aba **Config**:
+- **"Caminhos & apps"** — paths de dados e executáveis (com auto-descoberta).
+- **"Todas as configs"** — editor genérico que lê o `ecosystem.json` e expõe **todas** as chaves de config, com o tipo certo de campo (texto, senha, número, checkbox, lista). É à prova de chaves novas (aparecem sozinhas). Esconde estado de runtime/plumbing (`bg_processing`, `incoming_insights`, `pending_insights`, `last_git_head`, `exe_path`, `base_url`, `config_path`). `sync_root` fica read-only (editar via aba Sync, que deriva os caminhos). Implementação: `HUB/src/lib/config-fields.ts` + `HUB/src/views/ConfigView.tsx`.
+
+### Criptografia de segredos (senhas e chaves)
+
+Segredos no `ecosystem.json` — `hub.syncthing_gui_password`, `akasha.marginalia_api_key`, `akasha.qbt_password` (chave detectada pelo nome conter `password`/`api_key`/`token`/`secret`) — são **cifrados em repouso** com AES-256-GCM. Formato do valor: `enc:` + base64(`nonce[12]` || ciphertext || `tag[16]`). A chave AES-256 fica em `{data_dir}/ecosystem/.secret.key` (base64 de 32 bytes; criada na primeira execução; `0600` no Linux; nunca sincronizada/commitada).
+
+- **Módulos:** `ecosystem_secrets.py` (raiz, Python — usa `cryptography`) e `HUB/src-tauri/src/secrets.rs` (Rust — `aes-gcm`). Formato **idêntico**, provado por um vetor de teste conhecido (mesma key+nonce → mesma cifra nos dois lados → interop Python↔Rust).
+- **Quando cifra/decifra:** o HUB cifra campos "secret" ao salvar (editor de config e credenciais) e descriptografa ao ler para exibir; faz uma **migração idempotente no startup** (cifra segredos em texto puro pré-existentes). A AKASHA descriptografa ao ler (`marginalia_api_key`) e cifra ao salvar pela Settings.
+- **Threat model:** o ecossistema é local/offline/sem conta, então a chave fica na mesma máquina. Isso protege contra **exposição casual** (backup, screenshare, cópia do arquivo) — **não** contra alguém com acesso total à máquina (que teria cifra e chave). `decrypt()` é no-op em valores não-`enc:`, então texto puro continua legível durante a transição.
+
 ---
 
 ### Tabela de portas reservadas
@@ -1829,6 +1847,10 @@ O script `setup_searxng.sh`:
 **Marginalia (integração direta, fora do SearXNG):** além do SearXNG, `services/web_search.py` consulta a **API pública da Marginalia** (`api.marginalia.nu/{key}/search/{query}`) em paralelo via `_fetch_marginalia()` — índice independente de web indie/nicho que Google/Bing não cobrem. `key` = `akasha.marginalia_api_key` (vazio → `"public"`, funciona; chave própria via `contact@marginalia-search.com` dá rate limit melhor; editável em Settings). SearXNG + Marginalia são fundidos via `_merge_rrf()` (Reciprocal Rank Fusion, dedup por URL). Ganho medido: "craftivism" 30→67 resultados, 53 domínios distintos. **mwmbl** (`api.mwmbl.org/search/?s={query}`, índice indie comunitário ~500M URLs, grátis, sem chave) entra como **fallback leve** via `_fetch_mwmbl()`: complementa quando SearXNG+Marginalia retornam < 10 resultados (peso 0.3 no RRF, via param `weights`), e vira fonte primária antes do DDG quando os outros vêm vazios. Ordem de fallback final: SearXNG+Marginalia → mwmbl → DDG. **Stract:** a API hospedada **morreu** (404 em todos os caminhos, 2026-06-05) — a integração direta foi cancelada e substituída pelo mwmbl.
 
 **ecosystem.json:** `akasha.web_search_backend = "http://192.168.0.252:8080"` (servidor T410). Editável pelo painel Busca do HUB ou direto no arquivo. O `settings.yml` do servidor fica em `/home/spacewitch/searxng/core-config/settings.yml`; reiniciar com `sudo docker restart searxng-core`. (A instância local antiga do PC principal — AUR, `localhost:8888` — foi desinstalada; o `settings.yml` curado original permanece em `~/.config/searxng/settings.yml` como referência.)
+
+**Acesso remoto ao SearXNG via Tailscale (fora da rede de casa):** o `192.168.0.252` só existe na LAN. Para alcançar o SearXNG do T410 de outra máquina/rede (ex.: o PC de trabalho), as máquinas entram numa **tailnet** (Tailscale, VPN mesh). Endereços da tailnet (conta `bruxadacabana@`, MagicDNS ligado): T410 = `100.79.50.76` (nome `t410`), PC trabalho = `100.93.245.2`, PC principal = `100.125.205.75`. Aí `akasha.web_search_backend` aponta para `http://100.79.50.76:8080` (ou `http://t410:8080`). Pré-requisito no T410: o container precisa escutar em todas as interfaces — `SEARXNG_HOST=0.0.0.0` (senão fica preso à LAN). Teste de uma máquina remota: `tailscale ping t410` e `curl http://t410:8080/healthz`.
+
+**Fila de backend de busca (ordem de preferência):** `akasha.web_search_backend` (remoto, ex.: T410 via Tailscale) → `akasha.web_search_backend_fallback` (outra instância, opcional) → **SearXNG vendorizado local** (porta 8889, rodado nativo, sem Docker — para Windows onde o Docker não roda). `services/web_search.py:_active_searxng()` faz probes paralelos em `/healthz` e escolhe o de maior prioridade que estiver vivo. O vendorizado fica em `AKASHA/vendor/searxng/` (ver seção de serviços externos); gerenciado pelo painel Busca do HUB.
 
 ---
 

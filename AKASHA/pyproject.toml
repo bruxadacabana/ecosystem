@@ -35,6 +35,7 @@ dependencies = [
     "Pillow>=10.0",
     "networkx>=3.0",
     "argostranslate>=1.11.0",
+    "cryptography>=43",
 ]
 
 [project.optional-dependencies]

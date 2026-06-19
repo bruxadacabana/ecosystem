@@ -22,7 +22,9 @@ pub fn read_ecosystem_config() -> Result<Value, AppError> {
     }
 
     let content = std::fs::read_to_string(&path)?;
-    let value: Value = serde_json::from_str(&content)?;
+    let mut value: Value = serde_json::from_str(&content)?;
+    // Descriptografa segredos (`enc:...`) para o editor de config exibir/editar em claro.
+    crate::secrets::decrypt_tree(&mut value);
     Ok(value)
 }
 
@@ -141,7 +143,10 @@ pub fn save_ecosystem_config(updates: Value) -> Result<(), AppError> {
     })?;
 
     for (app, section) in obj {
-        ecosystem::write_section(app, section.clone())?;
+        // Cifra campos "secret" (nome contém password/api_key/token/secret) antes de gravar.
+        let mut section = section.clone();
+        crate::secrets::encrypt_secret_fields(&mut section);
+        ecosystem::write_section(app, section)?;
     }
 
     Ok(())
@@ -214,9 +219,9 @@ pub(crate) fn get_service_credentials_inner(eco: &Value) -> ServiceCredentials {
         qbt_host:               akasha["qbt_host"].as_str().unwrap_or("localhost").to_string(),
         qbt_port:               akasha["qbt_port"].as_u64().unwrap_or(8080) as u16,
         qbt_user:               akasha["qbt_user"].as_str().unwrap_or("").to_string(),
-        qbt_password:           akasha["qbt_password"].as_str().unwrap_or("").to_string(),
+        qbt_password:           crate::secrets::dec_or_keep(akasha["qbt_password"].as_str().unwrap_or("")),
         syncthing_gui_user:     hub["syncthing_gui_user"].as_str().unwrap_or("").to_string(),
-        syncthing_gui_password: hub["syncthing_gui_password"].as_str().unwrap_or("").to_string(),
+        syncthing_gui_password: crate::secrets::dec_or_keep(hub["syncthing_gui_password"].as_str().unwrap_or("")),
     }
 }
 
@@ -234,11 +239,11 @@ pub fn save_service_credentials(creds: ServiceCredentials) -> Result<(), AppErro
         "qbt_host":        creds.qbt_host,
         "qbt_port":        creds.qbt_port,
         "qbt_user":        creds.qbt_user,
-        "qbt_password":    creds.qbt_password,
+        "qbt_password":    crate::secrets::enc_if_plaintext(&creds.qbt_password),
     }))?;
     ecosystem::write_section("hub", serde_json::json!({
         "syncthing_gui_user":     creds.syncthing_gui_user,
-        "syncthing_gui_password": creds.syncthing_gui_password,
+        "syncthing_gui_password": crate::secrets::enc_if_plaintext(&creds.syncthing_gui_password),
     }))
 }
 

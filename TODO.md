@@ -4873,6 +4873,17 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
 
 ## Melhorias, correções e atualizações
 
+### Criptografar senhas e chaves no ecosystem.json (abordagem B: arquivo-chave + AES-GCM) | 2026-06-19
+> Contexto: segredos ficam em texto puro no `ecosystem.json` (`hub.syncthing_gui_password`; `akasha.marginalia_api_key`; futuros tokens). O arquivo é por-máquina e não sincronizado/commitado, mas texto puro ainda vaza em backup/screenshare/cópia. Decisão da usuária: criptografar (abordagem **B**). **Threat model:** local/offline/sem conta → a chave fica na mesma máquina; protege contra exposição **casual**, não contra acesso total à máquina. **Risco técnico:** interop cripto Python↔Rust — de-riscar com **vetor de teste conhecido** (mesma key+nonce → mesma cifra dos dois lados).
+> Formato combinado: chave AES-256 em `%APPDATA%/ecosystem/.secret.key` (base64 de 32 bytes, gitignored, nunca sincronizada); valor cifrado = `enc:` + base64(`nonce[12]` || ciphertext || `tag[16]`), AES-256-GCM sem AAD. `decrypt(v)` é no-op se `v` não começa com `enc:` (adoção fácil). Chaves "secret" = nome contém password/api_key/token/secret (mesmo detector do editor de config).
+#### Ecossistema (módulo compartilhado)
+- [x] **`ecosystem_secrets.py` (raiz, Python)** — `cryptography>=43` (AESGCM): `load_or_create_key`, `encrypt`, `decrypt` (no-op se não-`enc:`), `is_encrypted`, `looks_secret`, `dec_or_keep`, `enc_if_plaintext`. 10 testes pytest (roundtrip, no-op, idempotência, **vetor conhecido**).
+- [x] **`secrets.rs` (HUB, Rust)** — crates `aes-gcm`+`base64`+`rand`: mesmo formato/chave. + `decrypt_tree/encrypt_secret_fields/migrate_plaintext_secrets/dec_or_keep/enc_if_plaintext`. 9 testes cargo — `known_vector_*_matches_python` ✓ (interop provada).
+#### HUB
+- [x] **Wiring no HUB** — `read_ecosystem_config` decifra; `save_ecosystem_config` cifra campos "secret"; **migração no startup** (`migrate_plaintext_secrets`); `get/save_service_credentials` + `syncthing_get/set_credentials` decifram/cifram `syncthing_gui_password` e `qbt_password`.
+#### AKASHA
+- [x] **Wiring na AKASHA** — `_get_marginalia_key` decifra via `ecosystem_secrets.decrypt`; `routers/settings.py` cifra no POST e decifra no GET (exibe em claro). 
+
 ### Acesso remoto ao SearXNG do servidor via Tailscale + vendorizado como fallback local-only | 2026-06-17
 > Contexto: o work PC (e o laptop) estão em redes diferentes da de casa, onde fica o servidor T410 com o SearXNG (`http://192.168.0.252:8080`). Decisão da usuária: usar **Tailscale** (VPN mesh) para tornar o T410 alcançável de qualquer rede — assim o **remoto** vira o 1º da fila de busca em todas as máquinas (a fila remoto→local→vendor já está implementada). O **SearXNG vendorizado** deixa de ser versionado no repo (≈20 MB de árvore AGPL) e passa a ser **fallback local-only**, recriável pelo setup a partir do commit congelado + patches (abordagem 3b). Sem firewall de trabalho bloqueando (confirmado pela usuária). Nada disso expõe o servidor publicamente — só o tailnet.
 #### Infra — Tailscale (acesso ao T410 de qualquer rede)

@@ -334,7 +334,7 @@ pub fn syncthing_get_credentials() -> Result<SyncCredentials, AppError> {
     let eco = ecosystem::read_json();
     Ok(SyncCredentials {
         user:     eco["hub"]["syncthing_gui_user"].as_str().unwrap_or("").to_string(),
-        password: eco["hub"]["syncthing_gui_password"].as_str().unwrap_or("").to_string(),
+        password: crate::secrets::dec_or_keep(eco["hub"]["syncthing_gui_password"].as_str().unwrap_or("")),
     })
 }
 
@@ -344,7 +344,7 @@ pub fn syncthing_get_credentials() -> Result<SyncCredentials, AppError> {
 pub fn syncthing_set_credentials(user: String, password: String) -> Result<(), AppError> {
     ecosystem::write_section("hub", serde_json::json!({
         "syncthing_gui_user":     user,
-        "syncthing_gui_password": password,
+        "syncthing_gui_password": crate::secrets::enc_if_plaintext(&password),
     }))
 }
 

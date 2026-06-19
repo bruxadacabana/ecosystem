@@ -6,6 +6,7 @@ mod commands;
 mod ecosystem;
 mod error;
 mod logos;
+mod secrets;
 
 pub use error::AppError;
 
@@ -178,6 +179,8 @@ pub fn run() {
             commands::interests::interests_merge,
         ])
         .setup(|app| {
+            // Migra segredos em texto puro do ecosystem.json para cifrado (idempotente).
+            secrets::migrate_plaintext_secrets();
             // Inicializar LOGOS antes do logging para ter o estado pronto
             let llama_server_url = {
                 let eco = ecosystem::read_json();

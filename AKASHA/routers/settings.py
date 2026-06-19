@@ -88,7 +88,15 @@ def _merged(cfg: dict) -> dict:
 @router.get("/settings", response_class=HTMLResponse)
 async def settings_get(request: Request, saved: str = "") -> HTMLResponse:
     cfg = _merged(_read_cfg())
-    log.debug("settings GET: %s", cfg)
+    log.debug("settings GET: %s", cfg)  # logado ANTES de decifrar (não vaza segredo)
+    # Exibe segredos em claro nos campos do form (ficam cifrados no ecosystem.json).
+    try:
+        import ecosystem_secrets  # type: ignore
+        for _k in list(cfg.keys()):
+            if ecosystem_secrets.looks_secret(_k):
+                cfg[_k] = ecosystem_secrets.dec_or_keep(cfg.get(_k))
+    except Exception as e:
+        log.warning("settings GET: falha ao decifrar segredos: %s", e)
     return templates.TemplateResponse(
         request,
         "settings.html",
@@ -146,6 +154,15 @@ async def settings_post(request: Request) -> RedirectResponse:
         "save_clicks":            _bool("save_clicks"),
         "interest_consolidate_interval_min": _int("interest_consolidate_interval_min", 30, lo=5, hi=1440),
     }
+
+    # Cifra campos sensíveis (marginalia_api_key etc.) antes de persistir.
+    try:
+        import ecosystem_secrets  # type: ignore
+        for _k, _v in list(updates.items()):
+            if ecosystem_secrets.looks_secret(_k):
+                updates[_k] = ecosystem_secrets.enc_if_plaintext(_v)
+    except Exception as e:
+        log.warning("settings POST: falha ao cifrar segredos: %s", e)
 
     _save_cfg(updates)
     return RedirectResponse("/settings?saved=1", status_code=303)

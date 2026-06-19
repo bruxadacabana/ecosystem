@@ -37,6 +37,9 @@ hex  = "0.4"
 sysinfo = { version = "0.32", features = ["system"] }
 which   = "6"
 regex   = "1"
+aes-gcm = "0.10"
+base64  = "0.22"
+rand    = "0.8"
 
 [dev-dependencies]
 tempfile = "3"

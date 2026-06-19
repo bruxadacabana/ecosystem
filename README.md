@@ -849,6 +849,16 @@ copy ecosystem.local.example.json %APPDATA%\ecosystem\ecosystem.json
 - Windows 10: a definir após configuração do Syncthing
 - Fedora/laptop: a definir após configuração do Syncthing
 
+**O `ecosystem.json` é por-máquina e NÃO é sincronizado** (fica em `%APPDATA%\ecosystem\` / `~/.local/share/ecosystem/`, fora do `sync_root`). Por isso o HUB cobre **toda** a config: aba **Config → "Todas as configs"** edita qualquer chave (ver seção HUB).
+
+### Criptografia de segredos
+
+Senhas e chaves no `ecosystem.json` (`hub.syncthing_gui_password`, `akasha.marginalia_api_key`, `akasha.qbt_password` — qualquer chave cujo nome contenha `password`/`api_key`/`token`/`secret`) são **cifradas em repouso** (AES-256-GCM, valor no formato `enc:...`). A chave de cifragem fica em `{data_dir}/ecosystem/.secret.key` (criada na 1ª execução, nunca sincronizada/commitada). O HUB migra segredos em texto puro para cifrado no startup; o editor de config e a Settings da AKASHA mostram em claro e gravam cifrado. **Proteção contra exposição casual** (backup, screenshare, cópia) — não contra acesso total à máquina (a chave fica na mesma máquina). Módulos: `ecosystem_secrets.py` (Python) e `HUB/src-tauri/src/secrets.rs` (Rust), mesmo formato.
+
+### Acesso remoto ao SearXNG via Tailscale
+
+Para usar o SearXNG do servidor T410 fora da rede de casa, as máquinas entram numa tailnet (Tailscale). Aponte `akasha.web_search_backend` para o IP da tailnet do servidor (ex.: `http://100.79.50.76:8080` ou `http://t410:8080`). No T410, o container precisa de `SEARXNG_HOST=0.0.0.0`. Teste: `tailscale ping t410` + `curl http://t410:8080/healthz`.
+
 ---
 
 ## 11. Atualizar e rodar

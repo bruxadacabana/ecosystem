@@ -588,11 +588,15 @@ _MWMBL_FALLBACK_THRESHOLD = 10  # abaixo disto, complementa com mwmbl
 
 
 def _get_marginalia_key() -> str:
-    """Lê akasha.marginalia_api_key do ecosystem.json. Vazio → usa a chave pública."""
+    """Lê akasha.marginalia_api_key do ecosystem.json (descriptografa se cifrado).
+    Vazio → usa a chave pública."""
     try:
         from ecosystem_client import get_akasha_config as _gc  # type: ignore
-        return ((_gc() or {}).get("marginalia_api_key", "") or "").strip()
-    except Exception:
+        import ecosystem_secrets  # type: ignore
+        raw = ((_gc() or {}).get("marginalia_api_key", "") or "").strip()
+        return ecosystem_secrets.decrypt(raw).strip()
+    except Exception as e:
+        log.warning("marginalia: falha ao ler/decifrar a chave: %s", e)
         return ""
 
 
