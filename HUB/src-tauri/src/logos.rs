@@ -1603,7 +1603,8 @@ pub(crate) fn build_llama_server_cmd(
        .arg("--cont-batching")
        .arg("--pooling")   .arg("mean")   // habilita /v1/embeddings no modelo de chat
        .stdout(std::process::Stdio::null())
-       .stderr(std::process::Stdio::piped());
+       .stderr(std::process::Stdio::piped())
+       .kill_on_drop(true);   // sem isto, o llama-server vira órfão ao fechar/encerrar o HUB
     if let Some(mp) = mmproj_path {
         cmd.arg("--mmproj").arg(mp);
     }
@@ -1674,7 +1675,8 @@ pub(crate) fn build_llama_server_cmd_cpu_fallback(
        .arg("--parallel")      .arg("1")
        .arg("--pooling")       .arg("mean")
        .stdout(std::process::Stdio::null())
-       .stderr(std::process::Stdio::piped());
+       .stderr(std::process::Stdio::piped())
+       .kill_on_drop(true);   // não deixar órfão ao encerrar o HUB
     if let Some(mp) = mmproj_path {
         cmd.arg("--mmproj").arg(mp);
     }
@@ -1790,7 +1792,8 @@ pub(crate) fn build_embed_server_cmd(
        .arg("--batch-size")  .arg("2048")
        .arg("--ubatch-size") .arg("2048")
        .stdout(std::process::Stdio::null())
-       .stderr(std::process::Stdio::piped());
+       .stderr(std::process::Stdio::piped())
+       .kill_on_drop(true);   // não deixar o embed-server órfão ao encerrar o HUB
     if n_gpu == 0 {
         cmd.arg("--n-gpu-layers").arg("0");
     } else if n_gpu > 0 {

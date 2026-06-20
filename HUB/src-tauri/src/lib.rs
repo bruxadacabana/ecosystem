@@ -324,6 +324,17 @@ pub fn run() {
 
             Ok(())
         })
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application")
+        .run(|app_handle, event| {
+            // Ao ENCERRAR o HUB (não ao só esconder na bandeja), mata os llama-server
+            // (chat/análise + embed) para não deixá-los como órfãos segurando RAM/VRAM.
+            // Sem isto, fechar o HUB deixava os processos vivos (reparentados ao
+            // systemd --user), o de análise chegando a ~8 GB de RAM (pressão de RAM/travamento).
+            if let tauri::RunEvent::Exit = event {
+                let state = app_handle.state::<logos::LogosState>();
+                let n = tauri::async_runtime::block_on(logos::do_silence(state.inner()));
+                log::info!("HUB encerrando — {n} llama-server(s) descarregado(s).");
+            }
+        });
 }
