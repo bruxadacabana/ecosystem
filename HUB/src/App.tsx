@@ -157,15 +157,22 @@ export default function App() {
         for (const app of WATCHED) {
           const wasRunning = prev.has(app)
           const isRunning  = Boolean(current[app])
-          if (wasRunning && !isRunning && !gitPausedRef.current) {
-            // App fechou — aguarda gravações finalizarem e commita
-            setTimeout(() => {
-              cmd.gitCommitForApp(app).then(res => {
-                if (res.ok && res.data !== 'nothing') {
-                  console.info(`[HUB] auto-commit: ${app} → ${res.data}`)
-                }
-              })
-            }, 3_000)
+          if (wasRunning && !isRunning) {
+            // App fechou → derruba o llama-server dela na hora, pra não segurar RAM
+            // ocioso (akasha/mnemosyne/kosmos têm llama-server; hermes/aether não).
+            if (app === 'akasha' || app === 'mnemosyne' || app === 'kosmos') {
+              cmd.logosKillAppServer(app).catch(() => {})
+            }
+            // Auto-commit (separado — só se o git não está pausado)
+            if (!gitPausedRef.current) {
+              setTimeout(() => {
+                cmd.gitCommitForApp(app).then(res => {
+                  if (res.ok && res.data !== 'nothing') {
+                    console.info(`[HUB] auto-commit: ${app} → ${res.data}`)
+                  }
+                })
+              }, 3_000)
+            }
           }
         }
       }

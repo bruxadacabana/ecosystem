@@ -122,6 +122,7 @@ pub fn run() {
             commands::launcher::auto_discover_all_exe_paths,
             commands::logos::logos_get_status,
             commands::logos::logos_silence,
+            commands::logos::logos_kill_app_server,
             commands::logos::logos_set_profile,
             commands::logos::logos_list_models,
             commands::logos::logos_unload_model,

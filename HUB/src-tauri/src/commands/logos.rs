@@ -43,6 +43,27 @@ pub async fn logos_silence(
     Ok(crate::logos::do_silence(&state).await)
 }
 
+/// Mata o llama-server de uma app específica (akasha/mnemosyne/kosmos) — sem tocar
+/// no embed-server compartilhado (`:8082`). Chamado pelo HUB quando a app é fechada
+/// com o HUB ainda de pé, para não deixar o server segurando RAM ocioso (pode crescer
+/// a vários GB numa sessão longa). Retorna true se algum processo foi encerrado.
+#[tauri::command]
+pub async fn logos_kill_app_server(
+    app: String,
+    state: tauri::State<'_, LogosState>,
+) -> Result<bool, String> {
+    let killed = match app.to_lowercase().as_str() {
+        "akasha"    => state.kill_akasha_proc().await,
+        "mnemosyne" => state.kill_mnemosyne_proc().await,
+        "kosmos"    => state.kill_kosmos_proc().await,
+        _           => false,
+    };
+    if killed {
+        log::info!("LOGOS: llama-server da app '{app}' encerrado (app fechada).");
+    }
+    Ok(killed)
+}
+
 /// Altera o perfil de workflow ativo.
 /// Valores válidos: "normal" | "escrita" | "estudo" | "consumo".
 #[tauri::command]

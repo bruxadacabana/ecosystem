@@ -2497,6 +2497,22 @@ fn select_keep_alive(priority: u8) -> serde_json::Value {
     }
 }
 
+/// Threshold de RAM livre (MB) abaixo do qual o idle-timeout é encurtado.
+const IDLE_RAM_LOW_MB: u64 = 2048;
+/// Idle-timeout efetivo sob pressão de RAM (segundos) — descarrega mais cedo.
+const IDLE_UNDER_PRESSURE_SECS: u64 = 60;
+
+/// Idle-timeout efetivo: sob RAM livre baixa (< `IDLE_RAM_LOW_MB`), encurta para
+/// `IDLE_UNDER_PRESSURE_SECS` (nunca acima do `base`), para descarregar modelos
+/// ociosos antes de o sistema entrar em swap/travamento. Sem pressão, usa o `base`.
+fn effective_idle_timeout(base_secs: u64, ram_free_mb: u64) -> u64 {
+    if ram_free_mb < IDLE_RAM_LOW_MB {
+        base_secs.min(IDLE_UNDER_PRESSURE_SECS)
+    } else {
+        base_secs
+    }
+}
+
 /// Verifica ociosidade do chat server e descarrega o modelo se necessário.
 /// Retorna `true` se o processo foi morto, `false` se não havia processo ou não estava ocioso.
 /// Chamada pelo idle watchdog a cada 60s — e diretamente por testes.
@@ -2504,19 +2520,19 @@ async fn check_idle_llm(s: &LogosState) -> bool {
     if !s.llama_proc_active().await {
         return false;
     }
+    let (_, ram_free, _) = cpu_ram_usage(&s.0.sys, &s.0.cached_cpu_pct).await;
+    let timeout = effective_idle_timeout(s.0.idle_timeout_secs, ram_free);
     let elapsed = s.0.last_akasha_request_at.lock().await.elapsed().as_secs();
-    if elapsed > s.0.idle_timeout_secs {
+    if elapsed > timeout {
         log::info!(
             "LOGOS idle watchdog: chat sem requisições por {elapsed}s \
-             (limite: {}s) — descarregando modelo",
-            s.0.idle_timeout_secs
+             (limite: {timeout}s, RAM livre {ram_free}MB) — descarregando modelo"
         );
         s.kill_llama_proc().await;
         true
     } else {
         log::debug!(
-            "LOGOS idle watchdog: chat ativo há {elapsed}s (limite: {}s) — mantendo",
-            s.0.idle_timeout_secs
+            "LOGOS idle watchdog: chat ativo há {elapsed}s (limite: {timeout}s) — mantendo"
         );
         false
     }
@@ -2527,19 +2543,19 @@ async fn check_idle_mnemosyne(s: &LogosState) -> bool {
     if !s.mnemosyne_proc_active().await {
         return false;
     }
+    let (_, ram_free, _) = cpu_ram_usage(&s.0.sys, &s.0.cached_cpu_pct).await;
+    let timeout = effective_idle_timeout(s.0.idle_timeout_secs, ram_free);
     let elapsed = s.0.last_mnemosyne_request_at.lock().await.elapsed().as_secs();
-    if elapsed > s.0.idle_timeout_secs {
+    if elapsed > timeout {
         log::info!(
             "LOGOS idle watchdog (Mnemosyne): sem requisições por {elapsed}s \
-             (limite: {}s) — descarregando modelo",
-            s.0.idle_timeout_secs
+             (limite: {timeout}s, RAM livre {ram_free}MB) — descarregando modelo"
         );
         s.kill_mnemosyne_proc().await;
         true
     } else {
         log::debug!(
-            "LOGOS idle watchdog (Mnemosyne): ativo há {elapsed}s (limite: {}s) — mantendo",
-            s.0.idle_timeout_secs
+            "LOGOS idle watchdog (Mnemosyne): ativo há {elapsed}s (limite: {timeout}s) — mantendo"
         );
         false
     }
@@ -2550,19 +2566,19 @@ async fn check_idle_kosmos(s: &LogosState) -> bool {
     if !s.kosmos_proc_active().await {
         return false;
     }
+    let (_, ram_free, _) = cpu_ram_usage(&s.0.sys, &s.0.cached_cpu_pct).await;
+    let timeout = effective_idle_timeout(s.0.idle_timeout_secs, ram_free);
     let elapsed = s.0.last_kosmos_request_at.lock().await.elapsed().as_secs();
-    if elapsed > s.0.idle_timeout_secs {
+    if elapsed > timeout {
         log::info!(
             "LOGOS idle watchdog (KOSMOS): sem requisições por {elapsed}s \
-             (limite: {}s) — descarregando modelo",
-            s.0.idle_timeout_secs
+             (limite: {timeout}s, RAM livre {ram_free}MB) — descarregando modelo"
         );
         s.kill_kosmos_proc().await;
         true
     } else {
         log::debug!(
-            "LOGOS idle watchdog (KOSMOS): ativo há {elapsed}s (limite: {}s) — mantendo",
-            s.0.idle_timeout_secs
+            "LOGOS idle watchdog (KOSMOS): ativo há {elapsed}s (limite: {timeout}s) — mantendo"
         );
         false
     }
@@ -2573,19 +2589,19 @@ async fn check_idle_embed(s: &LogosState) -> bool {
     if !s.embed_proc_active().await {
         return false;
     }
+    let (_, ram_free, _) = cpu_ram_usage(&s.0.sys, &s.0.cached_cpu_pct).await;
+    let timeout = effective_idle_timeout(s.0.idle_timeout_secs, ram_free);
     let elapsed = s.0.last_embed_request_at.lock().await.elapsed().as_secs();
-    if elapsed > s.0.idle_timeout_secs {
+    if elapsed > timeout {
         log::info!(
             "LOGOS idle watchdog: embed sem requisições por {elapsed}s \
-             (limite: {}s) — descarregando modelo",
-            s.0.idle_timeout_secs
+             (limite: {timeout}s, RAM livre {ram_free}MB) — descarregando modelo"
         );
         s.kill_embed_proc().await;
         true
     } else {
         log::debug!(
-            "LOGOS idle watchdog: embed ativo há {elapsed}s (limite: {}s) — mantendo",
-            s.0.idle_timeout_secs
+            "LOGOS idle watchdog: embed ativo há {elapsed}s (limite: {timeout}s) — mantendo"
         );
         false
     }
@@ -6125,6 +6141,18 @@ mod tests {
         let total = 1929 + 4467 + kv3b + kv7b;
         assert!(total < (8176.0 * 0.95) as u64,
             "3B+7B+caches ({total} MB) deveria caber sob 95% de 8176 MB");
+    }
+
+    #[test]
+    fn effective_idle_timeout_encurta_sob_pressao_de_ram() {
+        // RAM livre baixa (< 2048 MB) → encurta para 60s
+        assert_eq!(effective_idle_timeout(300, 1000), 60);
+        assert_eq!(effective_idle_timeout(300, 2047), 60);
+        // base já menor que 60 sob pressão → mantém o base (nunca aumenta)
+        assert_eq!(effective_idle_timeout(30, 500), 30);
+        // RAM ok (>= 2048 MB) → usa o base configurado
+        assert_eq!(effective_idle_timeout(300, 2048), 300);
+        assert_eq!(effective_idle_timeout(300, 8000), 300);
     }
 
     // ── resolve_gguf_path ────────────────────────────────────────────────────

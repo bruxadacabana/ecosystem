@@ -171,6 +171,9 @@ export const logosGetStatus = (): Promise<TauriResult<LogosStatus>> =>
 export const logosSilence = (): Promise<TauriResult<number>> =>
   call<number>('logos_silence')
 
+export const logosKillAppServer = (app: string): Promise<TauriResult<boolean>> =>
+  call<boolean>('logos_kill_app_server', { app })
+
 export const logosSetProfile = (profile: string): Promise<TauriResult<string>> =>
   call<string>('logos_set_profile', { profile })
 
