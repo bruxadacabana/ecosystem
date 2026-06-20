@@ -88,7 +88,7 @@ Qual teste cobre o caso agora, ou por que não existe um.
 | [BUG-025](#bug-025) | FIXED | 2026-06-02 | AKASHA (services/web_search.py) | Chave de cache de busca web ignora `n_pages` — buscas leves envenenam o volume das reais |
 | [BUG-026](#bug-026) | FIXED | 2026-06-03 | HUB (commands/searxng.rs) | "Testar conexão" do SearXNG falha para instância remota (healthcheck gateado por systemd local) |
 | [BUG-027](#bug-027) | FIXED | 2026-06-03 | HUB/LOGOS (logos.rs) | AKASHA+Mnemosyne embedando ao mesmo tempo: startup do embed-server sem trava spawna duplicado → conflito na 8082 → 500 |
-| [BUG-028](#bug-028) | OPEN | 2026-06-03 | HUB/LOGOS (logos.rs) + Mnemosyne | embed-server em loop de restart (inicia "com sucesso" repetidamente) com Mnemosyne aberto → Mnemosyne dá timeout e não indexa nada |
+| [BUG-028](#bug-028) | FIXED | 2026-06-03 | HUB/LOGOS (logos.rs) + Mnemosyne | embed-server em loop de restart (inicia "com sucesso" repetidamente) com Mnemosyne aberto → Mnemosyne dá timeout e não indexa nada |
 | [BUG-029](#bug-029) | FIXED | 2026-06-03 | HUB/LOGOS (logos.rs) | embed-server com ubatch default 512 → inputs > 512 tokens dão HTTP 500 "input too large" (intermitente, chunks longos) |
 | [BUG-030](#bug-030) | FIXED | 2026-06-03 | Mnemosyne | Pipeline sem observabilidade: indexação/memória pessoal/temas salvam (ou falham) em silêncio — impossível auditar se o Mnemosyne funciona |
 | [BUG-031](#bug-031) | FIXED | 2026-06-04 | Mnemosyne | IA fora do controle do LOGOS (model2vec/POTION + cardiffnlp) — POTION ainda QUEBRAVA buscas no work_pc (128-dim vs índice bge-m3 1024-dim sincronizado). Removidos os dois; embedding sempre bge-m3 via LOGOS, sentimento via Plutchik/LOGOS |
@@ -1674,7 +1674,9 @@ Em `logos.rs`: (1) novo `embed_start_lock: Mutex<()>` na struct `Inner` — `ens
 
 ---
 
-### BUG-028 · [OPEN] · embed-server em loop de restart com Mnemosyne aberto — watchdog de VRAM mata, watchdog do embed-server ressuscita → Mnemosyne dá timeout e não indexa
+### BUG-028 · [FIXED] · embed-server em loop de restart com Mnemosyne aberto — watchdog de VRAM mata, watchdog do embed-server ressuscita → Mnemosyne dá timeout e não indexa
+
+> **RESOLVIDO (2026-06-19) pela diretiva "embed-server roda SEMPRE em CPU" (`embed_n_gpu_layers=0`, já implementada).** Tirando o embed-server da VRAM, ele sai do alcance do watchdog de VRAM — a causa raiz do churn (watchdog mata o embed P3 ao passar do limiar → watchdog do embed ressuscita) deixa de existir. **Validação ao vivo no PC principal (CachyOS, ecossistema rodando):** (1) o embed-server (`:8082`) roda com `--n-gpu-layers 0` (confirmado na linha de comando do processo); VRAM da RX 6600 ~3,1/8 GB carregando só o Qwen2.5-3B da AKASHA (`:8081`), embed fora da VRAM (lido via sysfs `mem_info_vram_used`; `rocm-smi` não instalado). (2) throughput em CPU: 1 embedding bge-m3 ~0,14 s no Ryzen 5 4600G → indexação P3 viável. (3) processo embed único e estável, **0 eventos de restart/silence** no log do HUB, `/health` ok — sem churn. `vram_limit_pct` no `ecosystem.json` já está em **95**. **Hardening opcional remanescente** (não bloqueia o fix; vira robustez extra alinhada à diretiva "P3 só atrasa, não morre"): não chamar `do_silence()` no limiar normal (só no extremo 97%), e o watchdog do embed distinguir kill intencional de crash — ver itens no TODO (seção BUG-028).
 
 #### Identificação
 - **Data:** 2026-06-03
