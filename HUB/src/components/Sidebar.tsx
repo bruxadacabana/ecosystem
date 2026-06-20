@@ -66,15 +66,18 @@ export function Sidebar({ section, onSection }: SidebarProps) {
         </span>
       </div>
 
-      {/* Section navigation */}
+      {/* Section navigation — rolável quando os ícones não cabem na altura */}
       <div
         style={{
           display: 'flex',
           flexDirection: 'column',
           gap: 2,
           width: '100%',
-          padding: '0 8px',
+          padding: '0 8px 8px',
           flex: 1,
+          minHeight: 0,
+          overflowY: 'auto',
+          scrollbarWidth: 'thin',
         }}
       >
         {SECTIONS.map(s => {
