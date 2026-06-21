@@ -201,7 +201,10 @@ class TestDeepResearchStepEvents:
 
     def _run_chat(self, deep_mode: bool, steps: list[dict] | None = None) -> list[dict]:
         from fastapi.testclient import TestClient
-        import AKASHA.main as main_mod
+        # Importar pelo caminho top-level `main` (não `AKASHA.main`): os patches abaixo
+        # são em `routers.chat.*` (top-level). `AKASHA.main` puxaria `AKASHA.routers.chat`
+        # — outro objeto de módulo — e os patches não pegariam o handler (BUG-045).
+        import main as main_mod
 
         _steps = steps or [
             {"step": 1, "query": "o que é python?", "sources_found": 0, "status": "searching"},
@@ -228,7 +231,7 @@ class TestDeepResearchStepEvents:
         async def fake_normal_search(q, max_results=15, expand=False, include_crawl=False):
             return [_sr("http://a.com", "normal result")]
 
-        async def fake_normal_prompt(question, snippets, persona):
+        async def fake_normal_prompt(question, snippets, persona, domain_suggestions=None):
             return [{"role": "user", "content": "test"}]
 
         with patch("routers.chat._deep_search_steps", side_effect=fake_deep_steps), \

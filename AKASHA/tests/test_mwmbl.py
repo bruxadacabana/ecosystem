@@ -144,6 +144,13 @@ def _setup_web(monkeypatch, sx_n: int, marg_n: int):
     monkeypatch.setattr(ws, "_get_searxng_url", lambda: "http://sx")
     monkeypatch.setattr(ws, "_get_marginalia_key", lambda: "")
 
+    # Fila de disponibilidade (2026-06-17): `_fetch_web` decide o SearXNG via
+    # `_active_searxng()`. Sem mockar, o probe real escaparia para a rede.
+    async def fake_active():
+        return ("remote", "http://sx")
+
+    monkeypatch.setattr(ws, "_active_searxng", fake_active)
+
     async def fake_sx(q, m, base, n_pages=1, lang=""):
         return [SearchResult(title=f"sx{i}", url=f"https://sx{i}.com", snippet="") for i in range(sx_n)]
 

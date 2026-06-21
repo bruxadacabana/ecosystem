@@ -105,6 +105,7 @@ Qual teste cobre o caso agora, ou por que não existe um.
 | [BUG-042](#bug-042) | FIXED | 2026-06-17 | KOSMOS (iniciar.sh) | botão "Iniciar" do KOSMOS no HUB não fazia nada — `iniciar.sh` estava sem o bit de execução (`-rw-r--r--`); o HUB lança via `Command::new(exe_path)` que no Linux executa o arquivo direto (exige `+x`). `chmod +x` (git rastreia o modo) + teste de regressão |
 | [BUG-043](#bug-043) | FIXED | 2026-06-17 | KOSMOS (paths.py) + HUB (backup.rs, sources.rs) | banco do KOSMOS gravado LOCAL (`~/.local/share/kosmos`) em vez de `sync_root/kosmos/`, contrariando o design → fontes/artigos sem sync nem backup (risco de perda total). **KOSMOS:** DB resolve para `{sync_root}/kosmos/kosmos.db` (fallback local) + migração + `sources_backup` exporta `kosmos/sources.json` e `.backup/kosmos/sources.json` a cada mudança + restore se vazio. **HUB:** `kosmos_db_path` (backup.rs + sources.rs) corrigido (`archive_path.parent()` → `archive_path`) + queries do schema v3 (`title/category/enabled`); a aba Fontes já renderiza os feeds (`DomainEntry.kosmos_feeds`). Exige rebuild do HUB |
 | [BUG-044](#bug-044) | FIXED | 2026-06-20 | AKASHA (tests/conftest.py) | poluição de event loop entre testes (py3.13): `asyncio.run()` zera o loop atual → `asyncio.get_event_loop().run_until_complete()` (usado por dezenas de testes) levanta `RuntimeError` conforme a ORDEM dos testes; ~40 falhas + 7 erros na suíte completa que passavam isolados. Fix no conftest: `_run` não deixa o loop zerado + fixture autouse garante um loop atual válido por teste |
+| [BUG-045](#bug-045) | FIXED | 2026-06-21 | AKASHA (tests: conftest + chat/deep/web_search) | falhas de teste dependentes de ordem (consensus/deep não emitiam eventos) + drift de testes de busca web. Causas: (a) testes faziam `del sys.modules["routers.chat"]`/`services.web_search` e reimportavam contra fakes, sem restaurar → poluíam testes seguintes; (b) deep importava `AKASHA.main` mas patchava `routers.chat` (duplo caminho de import); (c) mocks defasados após refactors (`_build_prompt` 4 args, fila `_active_searxng`). Fix: fixture autouse central restaura módulos voláteis; deep usa `import main`; mocks atualizados; vendor SearXNG incompleto → skip. Suíte: 58 falhas/7 erros → 0 |
 
 ---
 
@@ -2416,4 +2417,68 @@ A própria suíte: de `58 failed, 7 errors` → `18 failed, 0 errors` (1403 pass
 As **18 falhas restantes são pré-existentes e independentes** — falham também em isolamento e são todas de
 **busca web** (searxng/marginalia/mwmbl/imagens/consensus/deep): drift de teste (mock `fake_build_prompt`
 com assinatura antiga; contagens esperadas defasadas; mensagens de log mudadas) e testes de integração que
-sobem o SearXNG vendorizado de verdade (ambiente). Registradas para investigação própria — ver TODO.
+sobem o SearXNG vendorizado de verdade (ambiente). Registradas para investigação própria — ver BUG-045.
+
+---
+
+### BUG-045 · [FIXED] · Falhas de teste por ordem (consensus/deep) + drift dos testes de busca web da AKASHA
+
+#### Identificação
+- **Data:** 2026-06-21
+- **App(s):** AKASHA (apenas testes; o código de produção está correto)
+- **Componente:** `tests/conftest.py`, `tests/test_chat_phases.py`, `tests/test_deep_research_steps.py`,
+  `tests/test_consensus_mode.py`, `tests/test_search_images_web.py`, `tests/test_searxng_akasha_config.py`,
+  `tests/test_searxng_integration.py`, `tests/test_marginalia.py`, `tests/test_mwmbl.py`,
+  `tests/test_vendor_searxng_integration.py`
+- **Commit do fix:** pendente (mesma resposta)
+- **Descoberta via:** teste-automatizado (continuação do BUG-044, ao limpar a suíte)
+- **Tempo de diagnóstico:** ~2 h (bisecção da poluição de ordem)
+
+#### Ambiente
+- **Máquina(s):** todas (suíte da AKASHA em `AKASHA/.venv`, Python 3.13.12, pytest 9.0.3)
+- **Modo:** teste
+
+#### Pré-condição para reproduzir
+Rodar a **suíte completa** (`pytest`). As 6 falhas de consensus/deep só aparecem em certas ORDENS de coleta
+(passavam isoladas); as 12 de busca web falhavam mesmo isoladas.
+
+#### Sintoma observado
+Após o BUG-044, restavam **18 falhas**: 6 de chat (consensus não emitia evento `consensus`; deep não emitia
+`step`/`sources` — `assert 0 == 1`) e 12 de busca web (TypeError de mock; contagens erradas; logs ausentes;
+SearXNG vendorizado "saiu antes de responder").
+
+#### Causa raiz
+Três classes, todas **de teste** (o app está certo):
+1. **Poluição de `sys.modules`:** `test_chat_phases`/`test_deep_research` faziam `del sys.modules["routers.chat"]`
+   e reimportavam ENQUANTO módulos fake (config/local_search) estavam ativos; o `del` não é rastreado pelo
+   monkeypatch → o `routers.chat` reimportado ficava preso aos fakes e **vazava** para os testes seguintes que
+   usam o router de chat. Idem `del services.web_search`/`knowledge_worker`/`translation_card` em outros testes.
+2. **Duplo caminho de import:** `test_deep_research_steps` importava `AKASHA.main` (caminho de pacote) mas
+   patchava `routers.chat.*` (caminho top-level) — objetos de módulo diferentes → os patches não pegavam o
+   handler do app.
+3. **Drift de teste após refactors do `web_search`:** mocks com assinatura antiga (`_build_prompt` ganhou
+   `domain_suggestions`; `search_images_web`/`_fetch_web` passaram a usar a fila `_active_searxng()` em vez de
+   `_get_searxng_url`); e o SearXNG **vendorizado** está incompleto (falta `searx/data/` na árvore commitada —
+   rework pendente), fazendo os testes de integração falharem em vez de pular.
+
+#### Impacto
+Suíte completa com 18 falsos negativos — sinal de saúde inutilizável. Sem impacto em produção.
+
+#### Fix
+- **Central (conftest):** fixture autouse `_restore_volatile_modules` restaura ao estado pré-teste os módulos
+  voláteis (`routers.chat`, `services.local_search/web_search/knowledge_worker/translation_card`) — neutraliza
+  qualquer `del sys.modules` não restaurado, atual ou futuro.
+- **deep:** passou a `import main` (top-level), alinhado aos seus patches em `routers.chat`.
+- **Drift:** mocks atualizados para a assinatura/semântica atuais (`_build_prompt` com 4º arg; mocks de
+  `_active_searxng`/`_fetch_searxng_images` no lugar de `_get_searxng_url`/httpx; expectativas de log alinhadas
+  à mensagem de fallback atual).
+- **Vendor:** `test_vendor_searxng_integration` agora pula (em vez de falhar) quando a árvore vendorizada não
+  importa (probe `from searx import data`) — fiel ao design "integração condicional ao setup".
+
+#### Teste de regressão
+A própria suíte completa: **58 falhas/7 erros → 0 falhas/0 erros** (1419 passam, 12 skip). Combos-canário que
+reproduziam a poluição (`integration + chat_phases + consensus`; `... + deep`) agora passam.
+
+#### Pendência separada (registrada no TODO)
+O **SearXNG vendorizado** não sobe por falta de `searx/data/` na árvore commitada — faz parte do rework
+pendente do vendor (tirar a árvore pesada do repo e recriá-la pelo setup). Não corrigido aqui.

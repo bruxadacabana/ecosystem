@@ -252,7 +252,7 @@ class TestFetchWebChain:
         assert ddg_called, "DDG não foi chamado como fallback"
 
     def test_fetch_web_no_url_skips_searxng(self, monkeypatch):
-        """Sem URL SearXNG → DDG direto, sem tentar SearXNG."""
+        """Nenhum SearXNG vivo (`_active_searxng` → None) → não chama `_fetch_searxng`."""
         import services.web_search as _ws
 
         searxng_called = []
@@ -264,12 +264,24 @@ class TestFetchWebChain:
         async def _fake_ddg(q, max):
             return [_ws.SearchResult(title="D", url="https://d.com", snippet="")]
 
-        monkeypatch.setattr(_ws, "_get_searxng_url", lambda: "")
+        async def _no_active():
+            return None
+
+        async def _no_marg(q, k, n):
+            return []
+
+        async def _no_mwmbl(q, n):
+            return []
+
+        monkeypatch.setattr(_ws, "_active_searxng", _no_active)
         monkeypatch.setattr(_ws, "_fetch_searxng", _fake_searxng)
+        monkeypatch.setattr(_ws, "_fetch_marginalia", _no_marg)
+        monkeypatch.setattr(_ws, "_fetch_mwmbl", _no_mwmbl)
+        monkeypatch.setattr(_ws, "_get_marginalia_key", lambda: "")
         monkeypatch.setattr(_ws, "_fetch_ddg", _fake_ddg)
 
         run(_ws._fetch_web("test", 10))
-        assert not searxng_called, "SearXNG não deve ser chamado quando URL vazia"
+        assert not searxng_called, "SearXNG não deve ser chamado quando nenhum candidato está vivo"
 
 
 # ---------------------------------------------------------------------------
@@ -337,13 +349,27 @@ class TestDebugLogs:
         )
 
     def test_log_shows_ddg_when_searxng_not_configured(self, monkeypatch, caplog):
-        """Sem SearXNG configurado → debug log deve indicar DDG."""
+        """Nenhum SearXNG vivo → log deve indicar o fallback (DDG).
+
+        Com a fila de disponibilidade (2026-06-17), "não configurado" virou "nenhum
+        candidato vivo": força-se `_searxng_candidates` vazio → `_active_searxng`
+        retorna None e loga o aviso de fallback (que cita DDG).
+        """
         import services.web_search as _ws
+
+        async def _no_marg(q, k, n):
+            return []
+
+        async def _no_mwmbl(q, n):
+            return []
 
         async def _fake_ddg(q, max):
             return []
 
-        monkeypatch.setattr(_ws, "_get_searxng_url", lambda: "")
+        monkeypatch.setattr(_ws, "_searxng_candidates", lambda: [])
+        monkeypatch.setattr(_ws, "_fetch_marginalia", _no_marg)
+        monkeypatch.setattr(_ws, "_fetch_mwmbl", _no_mwmbl)
+        monkeypatch.setattr(_ws, "_get_marginalia_key", lambda: "")
         monkeypatch.setattr(_ws, "_fetch_ddg", _fake_ddg)
 
         with caplog.at_level(logging.DEBUG, logger="akasha.web_search"):
@@ -351,7 +377,7 @@ class TestDebugLogs:
 
         assert any("DDG" in r.message or "não configurado" in r.message
                    for r in caplog.records), (
-            "Esperava log indicando DDG quando SearXNG não configurado"
+            f"Esperava log indicando DDG. Logs: {[r.message for r in caplog.records]}"
         )
 
 

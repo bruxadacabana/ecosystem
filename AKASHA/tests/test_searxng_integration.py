@@ -291,7 +291,11 @@ class TestSearxngLogs:
         )
 
     def test_debug_log_when_searxng_not_configured(self, monkeypatch, caplog):
-        """Log de debug indica uso do DDG quando SearXNG não configurado."""
+        """Nenhum SearXNG vivo → log indica o fallback (DDG).
+
+        Fila de disponibilidade (2026-06-17): força `_searxng_candidates` vazio →
+        `_active_searxng` retorna None e loga o aviso que cita DDG.
+        """
         import services.web_search as _mod
         import logging
 
@@ -301,16 +305,20 @@ class TestSearxngLogs:
         async def _empty_marginalia(q, key, max):
             return []
 
-        monkeypatch.setattr(_mod, "_get_searxng_url", lambda: "")
+        async def _empty_mwmbl(q, n):
+            return []
+
+        monkeypatch.setattr(_mod, "_searxng_candidates", lambda: [])
         monkeypatch.setattr(_mod, "_fetch_ddg", _fake_fetch_ddg)
         monkeypatch.setattr(_mod, "_get_marginalia_key", lambda: "")
         monkeypatch.setattr(_mod, "_fetch_marginalia", _empty_marginalia)
+        monkeypatch.setattr(_mod, "_fetch_mwmbl", _empty_mwmbl)
 
         with caplog.at_level(logging.DEBUG, logger="akasha.web_search"):
             run(_mod._fetch_web("python", 10))
 
         assert any("DDG" in r.message or "não configurado" in r.message for r in caplog.records), (
-            "Esperava log indicando DDG ou SearXNG não configurado"
+            f"Esperava log indicando DDG. Logs: {[r.message for r in caplog.records]}"
         )
 
 

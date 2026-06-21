@@ -51,6 +51,36 @@ def _ensure_current_event_loop():
     yield
 
 
+# Módulos que alguns testes deletam de `sys.modules` e reimportam contra módulos
+# fake (ex.: `del sys.modules["routers.chat"]` em test_chat_phases/test_deep_research,
+# `del services.web_search` em test_web_search_spam_filter, etc.). Esses `del` não são
+# rastreados pelo monkeypatch, então sem restauração o módulo reimportado ficava preso
+# aos fakes e poluía testes seguintes que usam o mesmo módulo — quebrando a emissão de
+# eventos do chat (consensus/deep), por ordem de coleta (BUG-045). NÃO incluir `main`
+# (reimportá-lo reconstrói o app inteiro a cada teste — caro).
+_VOLATILE_MODULES = (
+    "routers.chat",
+    "services.local_search",
+    "services.web_search",
+    "services.knowledge_worker",
+    "services.translation_card",
+)
+
+
+@pytest.fixture(autouse=True)
+def _restore_volatile_modules():
+    """Restaura ao estado pré-teste os módulos que alguns testes deletam/reimportam
+    contra fakes — defesa central contra poluição de `sys.modules` entre testes."""
+    saved = {m: sys.modules.get(m) for m in _VOLATILE_MODULES}
+    yield
+    for m, orig in saved.items():
+        if orig is not None:
+            if sys.modules.get(m) is not orig:
+                sys.modules[m] = orig
+        else:
+            sys.modules.pop(m, None)
+
+
 @pytest.fixture(autouse=True)
 def _disable_marginalia_by_default(request, monkeypatch):
     """Desabilita a Marginalia (busca web complementar, externa) por padrão em todos

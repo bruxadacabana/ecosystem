@@ -225,7 +225,7 @@ class TestConsensusModeEndpoint:
         async def fake_search_local(q, max_results=15, expand=False, include_crawl=False):
             return _results
 
-        async def fake_build_prompt(question, snippets, persona):
+        async def fake_build_prompt(question, snippets, persona, domain_suggestions=None):
             return [{"role": "user", "content": "test"}]
 
         async def fake_stream_chat(msgs, model, max_tokens=600, timeout=None):

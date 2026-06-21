@@ -196,8 +196,16 @@ def test_fetch_web_merges_searxng_and_marginalia(monkeypatch):
     async def fake_marg(q, key, m):
         return [SearchResult(title="mg", url="https://marg-only.com", snippet="")]
 
+    async def fake_active():  # fila de disponibilidade (2026-06-17)
+        return ("remote", "http://sx")
+
+    async def no_mwmbl(q, m):
+        return []
+
+    monkeypatch.setattr(ws, "_active_searxng", fake_active)
     monkeypatch.setattr(ws, "_fetch_searxng", fake_sx)
     monkeypatch.setattr(ws, "_fetch_marginalia", fake_marg)
+    monkeypatch.setattr(ws, "_fetch_mwmbl", no_mwmbl)
 
     out = _run(ws._fetch_web("q", 0, n_pages=1))
     urls = {r.url for r in out}
@@ -263,8 +271,16 @@ def test_fetch_web_marginalia_exception_does_not_break(monkeypatch):
     async def boom_marg(q, key, m):
         raise RuntimeError("marginalia down")
 
+    async def fake_active():  # fila de disponibilidade (2026-06-17)
+        return ("remote", "http://sx")
+
+    async def no_mwmbl(q, m):
+        return []
+
+    monkeypatch.setattr(ws, "_active_searxng", fake_active)
     monkeypatch.setattr(ws, "_fetch_searxng", fake_sx)
     monkeypatch.setattr(ws, "_fetch_marginalia", boom_marg)
+    monkeypatch.setattr(ws, "_fetch_mwmbl", no_mwmbl)
 
     out = _run(ws._fetch_web("q", 0))
     assert [r.url for r in out] == ["https://sx.com"]

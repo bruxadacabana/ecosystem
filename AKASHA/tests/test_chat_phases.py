@@ -44,6 +44,9 @@ sys.path.insert(0, str(_ROOT.parent))
 
 @pytest.fixture(autouse=True)
 def _patch_heavy(monkeypatch):
+    # NOTA: este módulo faz `del sys.modules["routers.chat"]` e reimporta contra os
+    # módulos fake abaixo. A restauração de `routers.chat` (e demais voláteis) ao real
+    # é feita centralmente pela fixture `_restore_volatile_modules` do conftest (BUG-045).
     fake_eco = types.ModuleType("ecosystem_client")
     fake_eco.get_inference_url = lambda: "http://127.0.0.1:7072"
     fake_eco.get_active_profile = lambda: {"models": {"llm_query": "test"}}

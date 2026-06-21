@@ -66,30 +66,37 @@ class _FakeDDGS:
 class TestSearchImagesWeb:
 
     def test_uses_searxng_when_configured(self, monkeypatch):
-        """Se SearXNG configurado e retorna resultados, DDG não é chamado."""
+        """SearXNG vivo e retornando imagens → DDG não é chamado.
+
+        Mocka os seams atuais (`_active_searxng` + `_fetch_searxng_images`); o código
+        deixou de usar `_get_searxng_url`/httpx inline para imagens (fila de
+        disponibilidade, 2026-06-17).
+        """
         import services.web_search as _mod
 
-        searxng_data = _make_searxng_response(3)
+        final = [
+            {"img_url": f"https://searxng.example/img{i}.jpg",
+             "page_url": f"https://example.com/page{i}",
+             "alt_text": f"Imagem SearXNG {i}", "title": f"Imagem SearXNG {i}"}
+            for i in range(3)
+        ]
         ddg_called = []
 
-        mock_resp = MagicMock()
-        mock_resp.json.return_value = {"results": searxng_data}
-        mock_resp.raise_for_status = MagicMock()
+        async def fake_active():
+            return ("remote", "http://localhost:8888")
 
-        mock_client = AsyncMock()
-        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-        mock_client.__aexit__ = AsyncMock(return_value=False)
-        mock_client.get = AsyncMock(return_value=mock_resp)
-
-        monkeypatch.setattr(_mod, "_get_searxng_url", lambda: "http://localhost:8888")
+        async def fake_fetch(query, max, url):
+            return final
 
         def _fake_ddgs(*a, **kw):
             ddg_called.append(True)
             return []
 
-        with patch("httpx.AsyncClient", return_value=mock_client):
-            with patch.object(_mod.DDGS, "images", _fake_ddgs):
-                results = run(_mod.search_images_web("gato", max=10))
+        monkeypatch.setattr(_mod, "_active_searxng", fake_active)
+        monkeypatch.setattr(_mod, "_fetch_searxng_images", fake_fetch)
+
+        with patch.object(_mod.DDGS, "images", _fake_ddgs):
+            results = run(_mod.search_images_web("gato", max=10))
 
         assert len(results) == 3
         assert results[0]["img_url"] == "https://searxng.example/img0.jpg"
@@ -141,11 +148,15 @@ class TestSearchImagesWeb:
         assert "ddg.example" in results[0]["img_url"]
 
     def test_uses_ddg_when_searxng_not_configured(self, monkeypatch):
-        """SearXNG não configurado → usa DDG diretamente."""
+        """Nenhum SearXNG vivo → usa DDG diretamente."""
         import services.web_search as _mod
 
         ddg_items = _make_ddg_response(4)
-        monkeypatch.setattr(_mod, "_get_searxng_url", lambda: "")
+
+        async def fake_active():
+            return None
+
+        monkeypatch.setattr(_mod, "_active_searxng", fake_active)
         monkeypatch.setattr(_mod, "DDGS", lambda: _FakeDDGS(ddg_items))
 
         results = run(_mod.search_images_web("cachorro", max=10))
@@ -154,14 +165,17 @@ class TestSearchImagesWeb:
         assert all("ddg.example" in r["img_url"] for r in results)
 
     def test_ddg_offline_returns_empty(self, monkeypatch):
-        """DDG lançando exceção → retorna [] sem propagar."""
+        """Sem SearXNG e DDG lançando exceção → retorna [] sem propagar."""
         import services.web_search as _mod
 
         class _BrokenDDGS:
             def images(self, q, max_results=20):
                 raise ConnectionError("DDG offline")
 
-        monkeypatch.setattr(_mod, "_get_searxng_url", lambda: "")
+        async def fake_active():
+            return None
+
+        monkeypatch.setattr(_mod, "_active_searxng", fake_active)
         monkeypatch.setattr(_mod, "DDGS", lambda: _BrokenDDGS())
 
         results = run(_mod.search_images_web("teste"))
@@ -211,8 +225,8 @@ class TestSearchImagesWeb:
             for key in ("img_url", "page_url", "alt_text", "title"):
                 assert key in r, f"Chave '{key}' ausente: {r}"
 
-    def test_filters_items_without_img_src(self, monkeypatch):
-        """Itens SearXNG sem img_src são ignorados."""
+    def test_filters_items_without_img_src(self):
+        """Itens SearXNG sem img_src são ignorados (em `_fetch_searxng_images`)."""
         import services.web_search as _mod
 
         raw = [
@@ -229,10 +243,8 @@ class TestSearchImagesWeb:
         mock_client.__aexit__ = AsyncMock(return_value=False)
         mock_client.get = AsyncMock(return_value=mock_resp)
 
-        monkeypatch.setattr(_mod, "_get_searxng_url", lambda: "http://localhost:8888")
-
         with patch("httpx.AsyncClient", return_value=mock_client):
-            results = run(_mod.search_images_web("x", max=10))
+            results = run(_mod._fetch_searxng_images("x", 10, "http://localhost:8888"))
 
         assert len(results) == 1
         assert results[0]["img_url"] == "https://x.com/img.jpg"
