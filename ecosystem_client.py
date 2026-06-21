@@ -8,6 +8,7 @@ Usado por KOSMOS, Mnemosyne e Hermes para ler/escrever
 from __future__ import annotations
 
 import json
+import logging
 import os
 import tempfile
 import warnings
@@ -124,17 +125,42 @@ def derive_paths(sync_root: str) -> dict[str, Any]:
 # LOGOS — cliente HTTP (porta 7072)
 # ---------------------------------------------------------------------------
 
+_log = logging.getLogger(__name__)
+
 _LOGOS_PORT = 7072
 _LOGOS_BASE = f"http://127.0.0.1:{_LOGOS_PORT}"
 
+# Loga a URL de inferência resolvida só uma vez (evita ruído por chamada).
+_inference_url_logged = False
+
 
 def get_inference_url() -> str:
-    """URL do backend de inferência: sempre o LOGOS (7072).
+    """URL do backend de inferência (LOGOS).
 
-    Toda comunicação com LLMs passa pelo LOGOS. Se o LOGOS não estiver disponível
-    (HUB fechado), os callers recebem esta URL e a chamada falha — sem fallback.
+    Lê ``akasha.inference_url`` do ecosystem.json em runtime — permite que uma
+    instância da AKASHA rodando em outra máquina (ex.: o servidor T410, sem AVX)
+    aponte os embeddings/LLM para o LOGOS de outra máquina pela Tailscale
+    (ex.: ``http://thewitch:7072``). Sem essa chave configurada (caso do PC
+    principal), usa o default local ``http://127.0.0.1:7072`` — comportamento
+    inalterado. Deve apontar para o **proxy LOGOS (7072)**, não o embed-server
+    (8082) direto, para preservar a serialização do ``embed_semaphore``.
+
+    Toda comunicação com LLMs passa pelo LOGOS. Se o LOGOS não estiver disponível,
+    os callers recebem esta URL e a chamada falha — sem fallback.
     """
-    return _LOGOS_BASE
+    global _inference_url_logged
+    try:
+        configured = read_ecosystem().get("akasha", {}).get("inference_url", "") or ""
+    except Exception:  # leitura do ecosystem.json nunca deve quebrar a inferência
+        configured = ""
+    url = configured.rstrip("/") if isinstance(configured, str) and configured else _LOGOS_BASE
+    if not _inference_url_logged:
+        _inference_url_logged = True
+        _log.info(
+            "ecosystem_client: inference_url resolvido para %s (%s)",
+            url, "config akasha.inference_url" if configured else "default 127.0.0.1:7072",
+        )
+    return url
 
 
 get_ollama_url = get_inference_url   # alias backward-compat
@@ -180,7 +206,7 @@ def _logos_get(path: str, timeout: float = 3.0) -> "dict[str, Any] | None":
     """GET JSON ao LOGOS. Retorna None se HUB não estiver rodando."""
     import urllib.request as _r
     try:
-        with _r.urlopen(f"{_LOGOS_BASE}{path}", timeout=timeout) as resp:
+        with _r.urlopen(f"{get_inference_url()}{path}", timeout=timeout) as resp:
             return json.loads(resp.read())
     except OSError:
         return None
@@ -191,7 +217,7 @@ def _logos_post(path: str, data: "dict[str, Any]", timeout: float = 10.0) -> "di
     import urllib.request as _r
     import urllib.error as _ue
     body = json.dumps(data).encode()
-    req = _r.Request(f"{_LOGOS_BASE}{path}", data=body,
+    req = _r.Request(f"{get_inference_url()}{path}", data=body,
                      headers={"Content-Type": "application/json"}, method="POST")
     try:
         with _r.urlopen(req, timeout=timeout) as resp:
