@@ -160,7 +160,28 @@ async def library_add_quick(url: str = Form(...)) -> Response:
 
 @router.get("/library/crawl/status")
 async def crawl_status_api() -> dict:
-    return {"paused": is_crawl_paused()}
+    """Status do crawling + indexação — fonte HTTP para o HUB.
+
+    O HUB do PC principal não lê o `bg_processing` do servidor T410 (fica no
+    ecosystem.json **dele**, que não é sincronizado), então busca o estado por aqui.
+    Devolve: estado do crawl (`paused`), fila/estado do knowledge worker
+    (`knowledge_extraction`, `worker_active`, `backfill_running`, `processed_session`)
+    e `semantic_available` — se o embed-server do LOGOS está alcançável (no T410, o
+    LOGOS remoto do PC principal via Tailscale). FTS funciona mesmo com ele offline;
+    só a busca semântica fica indisponível.
+    """
+    status: dict = {"paused": is_crawl_paused(), "semantic_available": False}
+    try:
+        from services.knowledge_worker import get_status as _kw_status
+        status.update(_kw_status())
+    except Exception as exc:  # status nunca deve quebrar o endpoint
+        _log.warning("crawl_status: falha ao obter status do knowledge_worker: %s", exc)
+    try:
+        from services.local_search import get_inference_status as _infer_status
+        status["semantic_available"] = bool(_infer_status())
+    except Exception as exc:
+        _log.warning("crawl_status: falha ao obter status de inferência: %s", exc)
+    return status
 
 
 @router.post("/library/crawl/pause")
