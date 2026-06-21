@@ -72,6 +72,20 @@ _eco: dict[str, Any] = _load()
 
 PERSONALITY_PROMPT: str = _eco.get("akasha", {}).get("personality_prompt", "") or _DEFAULT_PERSONALITY
 
+# Modo só-ferramenta: quando False, a AKASHA NÃO inicia os loops da assistente
+# (persona/reflexões/insights/observer/sugestão de domínio) — roda só a ferramenta
+# (crawl/index/busca/knowledge). Usado no deploy headless no servidor T410, onde só
+# a ferramenta deve rodar (a assistente, que usa LLM, fica no PC principal sob demanda).
+# Default True → PC principal mantém o comportamento atual.
+ASSISTANT_ENABLED: bool = bool(_eco.get("akasha", {}).get("assistant_enabled", True))
+
+
+def should_run_assistant_loops() -> bool:
+    """True se os loops da assistente (persona/reflexão/insights/observer/sugestão)
+    devem rodar neste processo. Lê `akasha.assistant_enabled` (default True); no
+    servidor T410 (modo só-ferramenta) é False. Helper testável usado pelo lifespan."""
+    return ASSISTANT_ENABLED
+
 DB_PATH:      Path = _resolve_db_path(_eco)
 ARCHIVE_PATH: Path = _resolve_archive_path(_eco)
 

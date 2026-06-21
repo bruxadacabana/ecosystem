@@ -317,17 +317,26 @@ async def lifespan(app: FastAPI):
     asyncio.get_running_loop().create_task(_startup_crawl())
     asyncio.get_running_loop().create_task(_knowledge_process_queue())
     asyncio.get_running_loop().create_task(_backfill_knowledge(config.ARCHIVE_PATH))
-    asyncio.get_running_loop().create_task(_persona_loop())
-    asyncio.get_running_loop().create_task(_reflection_loop())
-    asyncio.get_running_loop().create_task(_friendship_receiver_loop())
     asyncio.get_running_loop().create_task(_decay_scores_loop())
     asyncio.get_running_loop().create_task(_consolidate_interests_loop())
     asyncio.get_running_loop().create_task(_cache_cleanup_job())
     asyncio.get_running_loop().create_task(_domain_boost_job())
     asyncio.get_running_loop().create_task(_pagerank_job())
     asyncio.get_running_loop().create_task(_session_gc_loop())
-    asyncio.get_running_loop().create_task(_domain_suggestion_loop())
-    asyncio.get_running_loop().create_task(_observer_popups_loop())
+    # Loops da ASSISTENTE (persona/reflexão/insights/observer/sugestão de domínio) —
+    # usam LLM e são a "vida interior" da Akasha. Gateados por akasha.assistant_enabled
+    # (default True). No servidor T410 (modo só-ferramenta) ficam desligados: lá roda
+    # só a ferramenta (crawl/index/busca/knowledge); a assistente fica no PC principal.
+    if config.should_run_assistant_loops():
+        _log.info("lifespan: assistant_enabled=True — iniciando os loops da assistente")
+        asyncio.get_running_loop().create_task(_persona_loop())
+        asyncio.get_running_loop().create_task(_reflection_loop())
+        asyncio.get_running_loop().create_task(_friendship_receiver_loop())
+        asyncio.get_running_loop().create_task(_domain_suggestion_loop())
+        asyncio.get_running_loop().create_task(_observer_popups_loop())
+    else:
+        _log.info("lifespan: assistant_enabled=False — modo só-ferramenta (T410): "
+                  "loops da assistente desativados")
     yield
     # Shutdown — nada a liberar por enquanto
 
