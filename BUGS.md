@@ -104,6 +104,7 @@ Qual teste cobre o caso agora, ou por que não existe um.
 | [BUG-041](#bug-041) | FIXED | 2026-06-17 | KOSMOS (app/core/database.py) | banco pré-v3 (schema incompatível) no caminho do DB travava o KOSMOS na inicialização (`no such column: analysis_status`); `_ensure_columns` migrava só 1 coluna e rodava DEPOIS do `executescript`. Fix: migração roda ANTES e cobre todas as colunas novas (introspecção); banco de schema estrangeiro (sem `content_excerpt`) é arquivado em `.pre-v3.bak` e um v3 limpo é criado |
 | [BUG-042](#bug-042) | FIXED | 2026-06-17 | KOSMOS (iniciar.sh) | botão "Iniciar" do KOSMOS no HUB não fazia nada — `iniciar.sh` estava sem o bit de execução (`-rw-r--r--`); o HUB lança via `Command::new(exe_path)` que no Linux executa o arquivo direto (exige `+x`). `chmod +x` (git rastreia o modo) + teste de regressão |
 | [BUG-043](#bug-043) | FIXED | 2026-06-17 | KOSMOS (paths.py) + HUB (backup.rs, sources.rs) | banco do KOSMOS gravado LOCAL (`~/.local/share/kosmos`) em vez de `sync_root/kosmos/`, contrariando o design → fontes/artigos sem sync nem backup (risco de perda total). **KOSMOS:** DB resolve para `{sync_root}/kosmos/kosmos.db` (fallback local) + migração + `sources_backup` exporta `kosmos/sources.json` e `.backup/kosmos/sources.json` a cada mudança + restore se vazio. **HUB:** `kosmos_db_path` (backup.rs + sources.rs) corrigido (`archive_path.parent()` → `archive_path`) + queries do schema v3 (`title/category/enabled`); a aba Fontes já renderiza os feeds (`DomainEntry.kosmos_feeds`). Exige rebuild do HUB |
+| [BUG-044](#bug-044) | FIXED | 2026-06-20 | AKASHA (tests/conftest.py) | poluição de event loop entre testes (py3.13): `asyncio.run()` zera o loop atual → `asyncio.get_event_loop().run_until_complete()` (usado por dezenas de testes) levanta `RuntimeError` conforme a ORDEM dos testes; ~40 falhas + 7 erros na suíte completa que passavam isolados. Fix no conftest: `_run` não deixa o loop zerado + fixture autouse garante um loop atual válido por teste |
 
 ---
 
@@ -2354,3 +2355,65 @@ Risco de **perda total das fontes** da usuária (sem sync nem backup efetivo) e 
 
 #### Teste de regressão
 `KOSMOS/tests/test_sources_backup.py` (5) — export grava as duas cópias no formato v3, restore importa quando vazio, não restaura por cima, cai para o `.backup`, sem sync_root é no-op. `test_feeds_admin.py` (10) — CRUD + OPML. Isolamento: migração/restore só agem quando `DB_PATH` é o banco real do sync_root. Suíte KOSMOS: passa.
+
+---
+
+### BUG-044 · [FIXED] · Poluição de event loop entre testes da AKASHA (py3.13) — falhas dependentes de ordem
+
+#### Identificação
+- **Data:** 2026-06-20
+- **App(s):** AKASHA
+- **Componente:** `AKASHA/tests/conftest.py` (helper `_run`; faltava normalização do event loop)
+- **Commit do fix:** pendente (mesma resposta)
+- **Descoberta via:** teste-automatizado (ao rodar a suíte completa durante a Fase 3 do plano T410)
+- **Tempo de diagnóstico:** ~30 min
+
+#### Ambiente
+- **Máquina(s) afetadas:** todas (qualquer uma rodando a suíte da AKASHA em Python 3.13)
+- **OS:** CachyOS (confirmado); vale para qualquer SO com py3.13
+- **Modo:** teste (`AKASHA/.venv` Python 3.13.12, pytest 8.x + pytest-asyncio 1.3.0)
+- **Reproduzível em:** suíte completa `pytest` no MainPC
+
+#### Pré-condição para reproduzir
+Rodar a **suíte completa** (`pytest`) — a ordem importa. Em isolamento por arquivo os testes passam.
+
+#### Sintoma observado
+`58 failed, 7 errors` na suíte completa, mas os mesmos arquivos passavam isolados
+(ex.: `test_session_reflect.py` 10/10 e `test_search_history.py` 7/7 sozinhos). Erros do tipo
+`RuntimeError: There is no current event loop in thread 'MainThread'`.
+
+#### Logs
+```
+removed = asyncio.get_event_loop().run_until_complete(run())
+RuntimeError: There is no current event loop in thread 'MainThread'.
+```
+
+#### Causa raiz
+No **Python 3.13**, `asyncio.run()` chama `set_event_loop(None)` ao terminar, e `asyncio.get_event_loop()`
+passou a **levantar** `RuntimeError` quando não há loop atual (antes criava um). Dezenas de testes da AKASHA
+usam o padrão antigo `asyncio.get_event_loop().run_until_complete(...)`, e o helper `_run` do conftest (e
+vários testes) usam `asyncio.run()`. Assim, qualquer teste/fixture que rodasse um `asyncio.run()` **antes**
+deixava o loop zerado e quebrava o próximo teste que usasse `get_event_loop()` — falha **dependente da ordem**
+de coleta do pytest (por isso passavam isolados).
+
+#### Impacto
+Suíte completa inutilizável como sinal de saúde (40+ falsos negativos), mascarando regressões reais e
+dificultando validar qualquer mudança. Não é bug de produção — só de teste —, mas viola "rodar a suíte
+completa" do workflow.
+
+#### Fix
+`AKASHA/tests/conftest.py`: (1) `_run` deixou de usar `asyncio.run()` — cria um loop próprio, roda e
+**restaura um loop atual válido** no `finally`; (2) nova fixture autouse `_ensure_current_event_loop`
+normaliza o loop atual no início de cada teste (cria um fresco se o atual foi zerado/fechado). Defesa
+central — corrige todos os testes com o padrão antigo de uma vez, sem reescrever cada call site.
+
+#### Teste de regressão
+A própria suíte: de `58 failed, 7 errors` → `18 failed, 0 errors` (1403 passam, +47). Canário direto:
+`pytest tests/test_crawl_status_endpoint.py tests/test_session_reflect.py tests/test_search_history.py`
+(o primeiro usa `asyncio.run`, que antes poluía os outros dois) → **22 passam**.
+
+#### Observação (fora do escopo deste fix)
+As **18 falhas restantes são pré-existentes e independentes** — falham também em isolamento e são todas de
+**busca web** (searxng/marginalia/mwmbl/imagens/consensus/deep): drift de teste (mock `fake_build_prompt`
+com assinatura antiga; contagens esperadas defasadas; mensagens de log mudadas) e testes de integração que
+sobem o SearXNG vendorizado de verdade (ambiente). Registradas para investigação própria — ver TODO.

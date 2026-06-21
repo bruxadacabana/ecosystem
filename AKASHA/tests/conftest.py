@@ -15,7 +15,40 @@ if str(_AKASHA_ROOT) not in sys.path:
 
 
 def _run(coro):
-    return asyncio.run(coro)
+    """Roda uma corrotina nos testes **sem deixar o event loop atual zerado**.
+
+    `asyncio.run()` chama `set_event_loop(None)` ao terminar; no Python 3.13 isso faz
+    `asyncio.get_event_loop()` levantar `RuntimeError`. Como dezenas de testes usam
+    `asyncio.get_event_loop().run_until_complete(...)`, um `_run()` (ou qualquer
+    `asyncio.run()`) anterior os quebrava por ordem de execução (BUG-044). Aqui rodamos
+    num loop próprio e restauramos um loop atual válido no fim.
+    """
+    loop = asyncio.new_event_loop()
+    try:
+        return loop.run_until_complete(coro)
+    finally:
+        loop.close()
+        asyncio.set_event_loop(asyncio.new_event_loop())
+
+
+@pytest.fixture(autouse=True)
+def _ensure_current_event_loop():
+    """Garante um event loop atual válido para cada teste (py3.13).
+
+    Muitos testes chamam `asyncio.get_event_loop().run_until_complete(...)`; um
+    `asyncio.run()` de teste/fixture anterior pode ter zerado (ou fechado) o loop
+    atual, fazendo `get_event_loop()` levantar. Esta fixture autouse normaliza o
+    estado no início de cada teste — defesa contra poluição entre testes (BUG-044).
+    """
+    policy = asyncio.get_event_loop_policy()
+    try:
+        loop = policy.get_event_loop()
+        valid = loop is not None and not loop.is_closed()
+    except (RuntimeError, AssertionError):
+        valid = False
+    if not valid:
+        asyncio.set_event_loop(asyncio.new_event_loop())
+    yield
 
 
 @pytest.fixture(autouse=True)
